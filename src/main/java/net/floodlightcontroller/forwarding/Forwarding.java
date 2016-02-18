@@ -89,7 +89,6 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule, IOF
 	public Command processPacketInMessage(IOFSwitch sw, OFPacketIn pi, IRoutingDecision decision, FloodlightContext cntx) {
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		// We found a routing decision (i.e. Firewall is enabled... it's the only thing that makes RoutingDecisions)
-		System.out.println("Forwarding class is being used here!");
 		if (decision != null) {
 			if (log.isTraceEnabled()) {
 				log.trace("Forwarding decision={} was made for PacketIn={}", decision.getRoutingAction().toString(), pi);
@@ -108,7 +107,6 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule, IOF
 				doFlood(sw, pi, cntx);
 				return Command.CONTINUE;
 			case DROP:
-				System.out.println("Packet dropped!!!!!");
 				doDropFlow(sw, pi, decision, cntx);
 				return Command.CONTINUE;
 			default:
