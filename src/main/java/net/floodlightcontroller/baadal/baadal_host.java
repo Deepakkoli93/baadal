@@ -4,8 +4,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
@@ -17,6 +21,7 @@ import org.projectfloodlight.openflow.protocol.OFVersion;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
 import org.projectfloodlight.openflow.types.IPv6Address;
@@ -76,12 +81,18 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 	
 	protected static boolean FLOOD_ALL_ARP_PACKETS = false;
 	
-	protected int LOCAL = 65534; //baadal-br-int
-	protected int TRUNK = 1; //eth0
+	protected short LOCAL = (short) 65534; //baadal-br-int
+	protected short TRUNK = 1; //eth0
 	// protected OFPort LOCAL = 1;
 	// protected short TRUNK = 1;
-	Map<MacAddress, OFPort> macToPort;
-	Map<MacAddress, VlanVid> macToTag; //need to initialize it with central switch's mac with value 0
+	List<Map<OFPort, List<VlanVid> > > portToTag = new ArrayList< Map<OFPort, List<VlanVid> > >();
+	Map<MacAddress, OFPort> macToPort = new HashMap<MacAddress, OFPort>();;
+	Map<MacAddress, VlanVid> macToTag = new HashMap<MacAddress, VlanVid>(); //need to initialize it with central switch's mac with value 0
+	MacAddress central_switch_mac = MacAddress.of("16:87:82:b3:a4:4d");
+	MacAddress dpid_nat_br = MacAddress.of("52:52:00:01:15:03");
+	MacAddress dpid_controller_br = MacAddress.of("52:52:00:01:15:02");
+	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();; 
+	
 	
 	// taken from forwarding class
 	protected ITopologyService topologyService; //to get a list of ports that can send broadcast packets
@@ -253,6 +264,59 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		return;		
 	}
 	
+	// overloading doFlood to also accept actions as arguments
+	protected void doFlood(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx, Match match, List<OFAction> actions) {
+		OFPort inPort = (pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT));
+		// Set Action to flood
+		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
+		Set<OFPort> broadcastPorts = this.topologyService.getSwitchBroadcastPorts(sw.getId());
+
+		if (broadcastPorts == null) {
+			logger.debug("BroadcastPorts returned null. Assuming single switch w/no links.");
+			/* Must be a single-switch w/no links */
+			broadcastPorts = Collections.singleton(OFPort.FLOOD);
+		}
+		
+		for (OFPort p : broadcastPorts) {
+			if (p.equals(inPort)) continue;
+			actions.add(sw.getOFFactory().actions().output(p, Integer.MAX_VALUE));
+		}
+		pob.setActions(actions);
+		// log.info("actions {}",actions);
+		// set buffer-id, in-port and packet-data based on packet-in
+		pob.setBufferId(OFBufferId.NO_BUFFER);
+		pob.setInPort(inPort);
+		pob.setData(pi.getData());
+
+		try {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Writing flood PacketOut switch={} packet-in={} packet-out={}",
+						new Object[] {sw, pi, pob.build()});
+			}
+			messageDamper.write(sw, pob.build());
+		} catch (IOException e) {
+			logger.error("Failure writing PacketOut switch={} packet-in={} packet-out={}",
+					new Object[] {sw, pi, pob.build()}, e);
+		}
+		
+		// Create flow-mod based on packet-in and src-switch
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
+		fmb.setCookie(cookie)
+		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
+		.setBufferId(OFBufferId.NO_BUFFER)
+		.setMatch(match)
+		.setActions(actions);
+
+		if (logger.isTraceEnabled()) {
+			logger.trace("write flood flow-mod srcSwitch={} match={} " +
+					"pi={} flow-mod={}",
+					new Object[] {sw, match, pi, fmb.build()});
+		}
+		sw.write(fmb.build());
+		return;		
+	}
 	
 	/**
 	 * Instead of using the Firewall's routing decision Match, which might be as general
@@ -369,25 +433,46 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		return false;
 	}
 	
+	protected List<OFPort> find_tagToPort(VlanVid vid, int host_index){
+		List<OFPort> ports = new ArrayList<OFPort>();
+		Map<OFPort, List<VlanVid> > dict = portToTag.get(host_index);	    
+	    for(OFPort port : dict.keySet())
+	    {
+	    	List<VlanVid> tags = dict.get(port);
+	    	if(tags.contains(vid))
+	    		ports.add(port);
+	    }
+		return ports;
+	}
+	
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx,
 				IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+		if(!dpid_hosts.contains(MacAddress.of(sw.getId())))
+			return Command.CONTINUE;
 		Command ret = Command.STOP;
 		//learn mac to port mapping
-		macToPort.put(eth.getSourceMACAddress(), msg.getInPort());
-		Match match = createMatchFromPacket(sw, msg.getInPort() ,cntx);
+		OFPort input_port = (msg.getVersion().compareTo(OFVersion.OF_12) < 0 ? msg.getInPort() : msg.getMatch().get(MatchField.IN_PORT));
+		logger.info("input port number = {}", input_port);
+		
+		macToPort.put(eth.getSourceMACAddress(), input_port);
+		Match match = createMatchFromPacket(sw, input_port ,cntx);
 		List<OFAction> actions = new ArrayList<OFAction>();
-		VlanVid vlanId = VlanVid.ofVlan(eth.getVlanID());
+		VlanVid vlanId = VlanVid.ofVlan(eth.getVlanID()); 
+		// change to initialization
+		OFPort output_port = null; 
+		VlanVid outVlanTag = null;
+		int host_index = dpid_hosts.indexOf(MacAddress.of(sw.getId())); 
 		// String srcNetwork = macToGuid.get(eth.getSourceMACAddress());
 		// If the host is on an unknown network we deny it.
 		// We make exceptions for ARP and DHCP.
 		// We do not handle ARP packets
 		
-		if (eth.isBroadcast() || eth.isMulticast() || /*isDefaultGateway(eth) || */isDhcpPacket(eth)) {
-			ret = Command.CONTINUE;
-		} 
+//		if (eth.isBroadcast() || eth.isMulticast() || /*isDefaultGateway(eth) || */isDhcpPacket(eth)) {
+//			ret = Command.CONTINUE;
+//		} 
 		
-		else if (eth.getEtherType() == EthType.ARP)
+		if (eth.getEtherType() == EthType.ARP)
 			ret = Command.CONTINUE;
 
 		else if (eth.getEtherType() == EthType.IPv6)
@@ -395,8 +480,15 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 			doDropFlow(sw, msg, cntx, match);
 			ret = Command.STOP;
 		}
-		else if (msg.getInPort() == OFPort.of(LOCAL)) {
+		
+		else if (input_port == OFPort.of(LOCAL)) {
+//			logger.info("coming from local port");
+//			logger.info("Datapath id of switch {}", sw.getId().toString());
+//			Match m = createMatchFromPacket(sw, input_port, cntx);
+//			logger.info("Packet details {}",m.toString());
+			
 			macToTag.put(eth.getSourceMACAddress(),vlanId);
+			logger.info("input port is local, did u come here?");
 			if(eth.isBroadcast() || eth.isMulticast())
 			{
 				doFlood(sw, msg, cntx, match);
@@ -404,14 +496,13 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 			}
 			
 			else
-			{
-				OFPort output_port = null;
+			{				
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					if(output_port == OFPort.of(TRUNK))
 					{
-						VlanVid outVlanTag = null;
+						// if the tag is known
 						if(macToTag.get(eth.getDestinationMACAddress()) != null)
 						{
 							outVlanTag = macToTag.get(eth.getDestinationMACAddress());
@@ -429,13 +520,234 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 								actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
 								actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
 								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+								installAndSendout(sw, msg, cntx, match, actions);
 							}
 						}
+						
+						// else if the tag is known
+						else
+						{
+							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+							installAndSendout(sw, msg, cntx, match, actions);
+						}
 					}
+					
+					// else if the port is LOCAL
+					else
+					{
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions);
+					}
+				}
+				
+				// else if the outport is not known
+				else
+				{
+					// output_port = OFPort.FLOOD;
+					// actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+					// installAndSendout(sw, msg, cntx, match, actions);
+					logger.info("output port not known, flooding!");
+					doFlood(sw, msg, cntx, match, actions);
 				}
 					
 			}
 		} 
+		
+		// else if in port is TRUNK
+		else if (input_port == OFPort.of(TRUNK))
+		{
+			logger.info("coming from trunk port");
+			logger.info("Datapath id of switch {}", sw.getId().toString());
+			Match m = createMatchFromPacket(sw, input_port, cntx);
+			logger.info("Packet details {}",m.toString());
+			IPv4 ipv4 = (IPv4) eth.getPayload();
+			logger.info("Packet type {}", eth.getEtherType());
+			// if packet is broadcast
+			if(eth.isBroadcast())
+			{
+				if(vlanId.getVlan() == 0) // if untagged
+				{
+//					output_port = OFPort.FLOOD;
+//					actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+//					installAndSendout(sw, msg, cntx, match, actions);
+					doFlood(sw, msg, cntx, match, actions);
+				}
+				else // tagged
+				{
+					// strip the vlan tag to send out of access ports in vlan
+					actions.add(sw.getOFFactory().actions().popVlan());
+//					output_port = OFPort.FLOOD;
+//					actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+//					installAndSendout(sw, msg, cntx, match, actions);
+					doFlood(sw, msg, cntx, match, actions);
+				}
+			}
+			
+			// else if packet is multicast
+			else if (eth.isMulticast())
+			{
+				match = createMatchFromPacket(sw, input_port, cntx);
+				
+				if(vlanId.getVlan() == 0) // is untagged
+				{
+					doFlood(sw, msg, cntx, match, actions);
+				}
+				else // is tagged
+				{
+					actions.add(sw.getOFFactory().actions().popVlan());
+					doFlood(sw, msg, cntx, match, actions);
+				}
+			}
+			
+			// if packet is unicast
+			else
+			{
+				// my_match.dl_src = packet.src
+				if(macToPort.get(eth.getDestinationMACAddress()) != null)
+				{
+					output_port = macToPort.get(eth.getDestinationMACAddress());
+					if(vlanId.getVlan() == 0) // if untagged
+					{
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions);
+					}
+					else // tagged
+					{
+						// strip the vlan tag
+						actions.add(sw.getOFFactory().actions().popVlan());
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions);
+					}
+				}
+				else //output port unknown
+				{
+					if(vlanId.getVlan() == 0) // if tagged
+					{
+						//flood and install flow
+						doFlood(sw, msg, cntx, match, actions);
+					}
+					else // untagged
+					{
+						// find ports in vlan "out_vlan_tag"
+						List<OFPort> ports = find_tagToPort(vlanId, host_index);
+						ports.remove(OFPort.of(TRUNK));
+						
+						// strip the vlan tag
+						actions.add(sw.getOFFactory().actions().popVlan());
+						
+						// adding access ports in the vlan to out port list
+						for(OFPort port : ports)
+							actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
+						
+						actions.add(sw.getOFFactory().actions().output(OFPort.of(LOCAL), Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions);													
+					}
+				}
+			}
+		}
+		else //inport is an access port
+		{
+			// macToTag global dict; learnt only when packets ingress from ACCESS port
+			System.out.println("host_index="+host_index+"input_port"+input_port);
+			System.out.println(portToTag.get(host_index).get(input_port));
+			macToTag.put(eth.getSourceMACAddress(), portToTag.get(host_index).get(input_port).get(0));
+			outVlanTag = portToTag.get(host_index).get(input_port).get(0);
+			
+			// if broadcast
+			if(eth.isBroadcast())
+			{
+				// find the host
+				host_index = dpid_hosts.indexOf(MacAddress.of(sw.getId()));
+				
+				// find ports in the vlan "out_vlan_tag"
+				List<OFPort> ports = find_tagToPort(outVlanTag, host_index);
+				
+				actions.add(sw.getOFFactory().actions().output(OFPort.of(LOCAL), Integer.MAX_VALUE));
+				// adding access ports in the vlan to out port list
+				for(OFPort port : ports)
+					actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
+				
+				// push vlan tag
+				actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
+				actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
+				
+				// add trunk port in output too
+				actions.add(sw.getOFFactory().actions().output(OFPort.of(TRUNK), Integer.MAX_VALUE));
+				
+				installAndSendout(sw, msg, cntx, match, actions);
+			}
+			
+			// else if multicast
+			else if(eth.isMulticast())
+			{
+				match = createMatchFromPacket(sw, input_port, cntx);
+				
+				// find the host
+				host_index = dpid_hosts.indexOf(MacAddress.of(sw.getId()));
+				
+				// find ports in the vlan "out_vlan_tag"
+				List<OFPort> ports = find_tagToPort(outVlanTag, host_index);
+				
+				actions.add(sw.getOFFactory().actions().output(OFPort.of(LOCAL), Integer.MAX_VALUE));
+				// adding access ports in the vlan to out port list
+				for(OFPort port : ports)
+					actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
+				
+				// push vlan tag
+				actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
+				actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
+				
+				// add trunk port in output too
+				actions.add(sw.getOFFactory().actions().output(OFPort.of(TRUNK), Integer.MAX_VALUE));
+				
+				installAndSendout(sw, msg, cntx, match, actions);
+			}
+			
+			else //unicast
+			{
+				if(macToPort.get(eth.getDestinationMACAddress()) != null)
+				{
+					output_port = macToPort.get(eth.getDestinationMACAddress());
+					
+					if(output_port.getPortNumber() == TRUNK)
+					{
+						// push vlan tag
+						actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
+						actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
+						installAndSendout(sw, msg, cntx, match, actions);
+					}
+					else
+					{
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions);
+					}
+				}
+				
+				else //output port is unknown
+				{
+					// find the host
+					host_index = dpid_hosts.indexOf(MacAddress.of(sw.getId()));
+					
+					// find ports in the vlan "out_vlan_tag"
+					List<OFPort> ports = find_tagToPort(outVlanTag, host_index);
+					actions.add(sw.getOFFactory().actions().output(OFPort.of(LOCAL), Integer.MAX_VALUE));
+					// adding access ports in the vlan to out port list
+					for(OFPort port : ports)
+						actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
+					
+					// push vlan tag
+					actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
+					actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
+					
+					// add trunk port in output too
+					actions.add(sw.getOFFactory().actions().output(OFPort.of(TRUNK), Integer.MAX_VALUE));
+					
+					installAndSendout(sw, msg, cntx, match, actions);
+				}
+			}
+			
+		}
+//		
 		if (logger.isTraceEnabled())
 			logger.trace("Results for flow between {} and {} is {}",
 					new Object[] {eth.getSourceMACAddress(), eth.getDestinationMACAddress(), ret});
@@ -507,11 +819,44 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 	@Override
 	public void init(FloodlightModuleContext context)
 			throws FloodlightModuleException {
-		// TODO Auto-generated method stub
+		messageDamper = new OFMessageDamper(OFMESSAGE_DAMPER_CAPACITY,
+				EnumSet.of(OFType.FLOW_MOD),
+				OFMESSAGE_DAMPER_TIMEOUT);
 		floodlightProvider = context.getServiceImpl(IFloodlightProviderService.class);
-		logger = (Logger) LoggerFactory.getLogger(MACTracker.class);
+		logger = (Logger) LoggerFactory.getLogger(baadal_host.class);
 		topologyService = context.getServiceImpl(ITopologyService.class);
-
+		macToTag.put(central_switch_mac, VlanVid.ofVlan(0));
+		dpid_hosts.add(0,MacAddress.of("52:52:00:01:15:06"));
+		dpid_hosts.add(1,MacAddress.of("52:52:00:01:15:07"));
+		// initializing port to tag
+		Map<OFPort, List<VlanVid> > portToTag1 = new HashMap<OFPort, List<VlanVid> >();
+		for(int i=0; i<21; i++)
+		{
+			if(i == 0)
+			{
+				List<VlanVid> tags = new ArrayList<VlanVid>();
+				tags.add(VlanVid.ofVlan(0));
+				portToTag1.put(OFPort.of(LOCAL), tags);
+			}
+			
+			else if (i == 1)
+			{
+				List<VlanVid> tags = new ArrayList<VlanVid>();
+				for(int j=0; j<4095; j++)
+					tags.add(VlanVid.ofVlan(j));
+				portToTag1.put(OFPort.of(1), tags);
+			}
+			
+			else
+			{
+				List<VlanVid> tags = new ArrayList<VlanVid>();
+				tags.add(VlanVid.ofVlan(2));
+				portToTag1.put(OFPort.of(LOCAL), tags);
+			}
+		}
+		
+		portToTag.add(0,portToTag1);
+		portToTag.add(1,portToTag1);
 	}
 
 	@Override
