@@ -26,6 +26,8 @@ var AppRouter = Backbone.Router.extend({
         "switch/:id/port/:p":"portDetails", // not clear if needed
         "hosts":"hostList",
         "host/:id":"hostDetails",
+        "tools":"toolList",
+		"tools/:id":"toolDetails",
         // "vlans":"vlanList" // maybe one day
         // "vlan/:id":"vlanDetails"
     },
@@ -84,16 +86,32 @@ var AppRouter = Backbone.Router.extend({
         $('ul.nav > li').removeClass('active');
         $('li > a[href*="/hosts"]').parent().addClass('active');
     },
+    
+    toolList:function () {
+		console.log("switching to tools view");
+		$('#content').html(new ToolListView({model:tl}).render().el);
+		$('ul.nav > li').removeClass('active');
+		$('li > a[href*="/tools"]').parent().addClass('active');
+    },
+    
+    toolDetails:function (id) {
+    	var t = tl.get(id);
+    	//console.log("switching to single tool view");
+    	$('#content').html(new ToolDetailsView({model:t}).render().el);
+    	$('ul.nav > li').removeClass('active');
+    	$('li > a[href*="/tools"]').parent().addClass('active');
+    },
 
 });
 
 // load global models and reuse them
 var swl = new SwitchCollection();
 var hl  = new HostCollection();
+var tl = new ToolCollection();
 
 var updating = true;
 
-tpl.loadTemplates(['home', 'status', 'topology', 'header', 'switch', 'switch-list', 'switch-list-item', 'host', 'host-list', 'host-list-item', 'port-list', 'port-list-item', 'flow-list', 'flow-list-item'],
+tpl.loadTemplates(['home', 'status', 'topology', 'header', 'switch', 'switch-list', 'switch-list-item', 'host', 'host-list', 'host-list-item', 'port-list', 'port-list-item', 'flow-list', 'flow-list-item', 'tools-list', 'tool', 'tools-list-item','service-list-item','service-list','policy-list-item', 'policy-list'],
     function () {
         app = new AppRouter();
         Backbone.history.start({pushState: true});

@@ -96,9 +96,9 @@ public class MACTracker implements IOFMessageListener, IFloodlightModule {
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		Match m = ((OFPacketIn) msg).getMatch();
-		logger.info("Printing match");
-		logger.info(m.toString());
-		logger.info("End match");
+		// logger.info("Printing match");
+		// logger.info(m.toString());
+		// logger.info("End match");
 		// TODO Auto-generated method stub
 		switch(msg.getType()){
 		case PACKET_IN:
@@ -114,13 +114,13 @@ public class MACTracker implements IOFMessageListener, IFloodlightModule {
 		//return Command.CONTINUE;
 		
 		String srcMAC = eth.getSourceMACAddress().toString();
-		logger.info("source mac address:",srcMAC);
+		// logger.info("source mac address:",srcMAC);
 		 if (eth.getEtherType() == EthType.IPv4) {
 	            /* We got an IPv4 packet; get the payload from Ethernet */
 	            IPv4 ipv4 = (IPv4) eth.getPayload();
-	            logger.info("Switch address: {}", sw.getId().toString());
-	            logger.info("Source address: {}",ipv4.getSourceAddress().toString());
-	            logger.info("Destination address: {}",ipv4.getDestinationAddress().toString());
+	            // logger.info("Switch address: {}", sw.getId().toString());
+	            // logger.info("Source address: {}",ipv4.getSourceAddress().toString());
+	            // logger.info("Destination address: {}",ipv4.getDestinationAddress().toString());
 	            /* Various getters and setters are exposed in IPv4 */
 	            byte[] ipOptions = ipv4.getOptions();
 	            IPv4Address dstIp = ipv4.getDestinationAddress();
