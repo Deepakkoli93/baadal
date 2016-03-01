@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
 import org.projectfloodlight.openflow.protocol.OFMessage;
@@ -266,6 +267,46 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		return;		
 	}
 	
+	//overloading install and sendout to also accept ethernet frame for data
+	protected void installAndSendout(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx, Match match, List<OFAction> actions, Ethernet eth) {
+		OFPort inPort = (pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT));
+		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
+		pob.setActions(actions);
+		// log.info("actions {}",actions);
+		// set buffer-id, in-port and packet-data based on packet-in
+		pob.setBufferId(OFBufferId.NO_BUFFER);
+		pob.setInPort(inPort);
+		pob.setData(eth.serialize());
+
+		try {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Writing installAndSendout PacketOut switch={} packet-in={} packet-out={}",
+						new Object[] {sw, pi, pob.build()});
+			}
+			messageDamper.write(sw, pob.build());
+		} catch (IOException e) {
+			logger.error("Failure writing installAndSendout switch={} packet-in={} packet-out={}",
+					new Object[] {sw, pi, pob.build()}, e);
+		}
+		
+		// Create flow-mod based on packet-in and src-switch
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
+		fmb.setCookie(cookie)
+		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
+		.setBufferId(OFBufferId.NO_BUFFER)
+		.setMatch(match)
+		.setActions(actions);
+
+		if (logger.isTraceEnabled()) {
+			logger.trace("write installAndSendout flow-mod srcSwitch={} match={} " +
+					"pi={} flow-mod={}",
+					new Object[] {sw, match, pi, fmb.build()});
+		}
+		sw.write(fmb.build());
+		return;		
+	}
 	// overloading doFlood to also accept actions as arguments
 	protected void doFlood(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx, Match match, List<OFAction> actions) {
 		OFPort inPort = (pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT));
@@ -478,12 +519,55 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 	}
 	
+	protected void sendARPRequest(IPacket packet, IOFSwitch sw, OFPort inPort) {
+		
+		// Initialize a packet out
+		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
+		pob.setBufferId(OFBufferId.NO_BUFFER);
+		pob.setInPort(inPort);
+		
+		// Set output actions
+		List<OFAction> actions = new ArrayList<OFAction>();
+		Set<OFPort> broadcastPorts = this.topologyService.getSwitchBroadcastPorts(sw.getId());
+
+		if (broadcastPorts == null) {
+			logger.debug("BroadcastPorts returned null. Assuming single switch w/no links.");
+			/* Must be a single-switch w/no links */
+			broadcastPorts = Collections.singleton(OFPort.FLOOD);
+		}
+		
+		for (OFPort p : broadcastPorts) {
+			if (p.equals(inPort)) continue;
+			actions.add(sw.getOFFactory().actions().output(p, Integer.MAX_VALUE));
+		}
+		pob.setActions(actions);
+		//po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
+		
+		// Set packet data and length
+		byte[] packetData = packet.serialize();
+		pob.setData(packetData);
+		//pob.setLength((short) (OFPacketOut.MINIMUM_LENGTH + po.getActionsLength() + packetData.length));
+		
+		// Send packet
+		try {
+			//if (logger.isTraceEnabled()) {
+				logger.info("Writing ARP reply PacketOut switch={}  packet-out={}",
+						new Object[] {sw, pob.build()});
+			//}
+			messageDamper.write(sw, pob.build());
+		} catch (IOException e) {
+			logger.error("Failure writing installAndSendout switch={} packet-out={}",
+					new Object[] {sw, pob.build()}, e);
+		}
+	}
+	
+	
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx,
 				IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		if(!dpid_hosts.contains(MacAddress.of(sw.getId())))
 			return Command.CONTINUE;
-		if(MacAddress.of(sw.getId()).equals(MacAddress.of("52:52:00:01:15:06")))
+		if(MacAddress.of(sw.getId()).equals(MacAddress.of("52:52:00:01:15:07")))
 			return Command.CONTINUE;
 		Command ret = Command.STOP;
 		//learn mac to port mapping
@@ -507,107 +591,120 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 //		if (eth.isBroadcast() || eth.isMulticast() || /*isDefaultGateway(eth) || */isDhcpPacket(eth)) {
 //			ret = Command.CONTINUE;
 //		} 
-		
 		if (eth.getEtherType() == EthType.ARP)
 		{
+
+			Command ret1 = Command.CONTINUE;
 			ARP arp = (ARP) eth.getPayload();
-			logger.info("details->{} target address-> {}",arp.toString(), arp.getTargetProtocolAddress().toString());
-			if(!arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.25")) && !arp.getSenderProtocolAddress().equals(IPv4Address.of("10.0.4.25")))
-		    {
-				return Command.CONTINUE;
-		    }
-			
-			logger.info("ARP packet details -> {}",arp.toString());
-			logger.info("generate reply");
-			// generate ARP reply
-			MacAddress vm1mac = MacAddress.of("a2:00:00:71:17:c2");
-			IPv4Address vm1ip = IPv4Address.of("10.0.2.26");
-			MacAddress vm2mac = MacAddress.of("a2:00:00:f9:ef:e9");
-			IPv4Address vm2ip = IPv4Address.of("10.0.2.17"); 
-			
-			MacAddress vm3mac = MacAddress.of("a2:00:00:79:3d:56");
-			IPv4Address vm3ip = IPv4Address.of("10.0.4.25");
-			MacAddress vm4mac = MacAddress.of("a2:00:00:50:6c:5a");
-			IPv4Address vm4ip = IPv4Address.of("10.0.2.14");
-			
-			MacAddress hostmac = MacAddress.of("52:52:00:01:15:07");
+			MacAddress hostmac = MacAddress.of("52:52:00:01:15:06");
 			IPv4Address gateway1 = IPv4Address.of("10.0.4.1");
 			IPv4Address gateway2 = IPv4Address.of("10.0.2.1");
+			logger.info("details->{} target address-> {}",arp.toString(), arp.getTargetProtocolAddress().toString());
+			logger.info("ARP packet details -> {}",arp.toString());
+			logger.info("generate reply");
+			
+			// generate ARP reply
 			if(arp.getOpCode().equals(ARP.OP_REQUEST))
 			{
-			if(arp.getTargetProtocolAddress().equals(vm3ip))
-			{
-			IPacket arpReply = new Ethernet()
-				.setSourceMACAddress(vm1mac)
-				.setDestinationMACAddress(eth.getSourceMACAddress())
-				.setEtherType(EthType.ARP)
-				.setPriorityCode(eth.getPriorityCode())
-				.setPayload(
-						new ARP()
-						.setHardwareType(ARP.HW_TYPE_ETHERNET)
-						.setProtocolType(ARP.PROTO_TYPE_IP)
-						.setHardwareAddressLength((byte) 6)
-						.setProtocolAddressLength((byte) 4)
-						.setOpCode(ARP.OP_REPLY)
-						.setSenderHardwareAddress(vm3mac)
-						.setSenderProtocolAddress(vm3ip)
-						.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-						.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-						);
-			sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
-			}
-			else if(arp.getTargetProtocolAddress().equals(vm4ip))
-			{
-				IPacket arpReply = new Ethernet()
-				.setSourceMACAddress(vm2mac)
-				.setDestinationMACAddress(eth.getSourceMACAddress())
-				.setEtherType(EthType.ARP)
-				.setPriorityCode(eth.getPriorityCode())
-				.setPayload(
-						new ARP()
-						.setHardwareType(ARP.HW_TYPE_ETHERNET)
-						.setProtocolType(ARP.PROTO_TYPE_IP)
-						.setHardwareAddressLength((byte) 6)
-						.setProtocolAddressLength((byte) 4)
-						.setOpCode(ARP.OP_REPLY)
-						.setSenderHardwareAddress(vm4mac)
-						.setSenderProtocolAddress(vm4ip)
-						.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-						.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-						);
-			sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
-			}
-			else if(arp.getTargetProtocolAddress().equals(gateway1) || arp.getTargetProtocolAddress().equals(gateway2))
-			{
-				IPacket arpReply = new Ethernet()
-				.setSourceMACAddress(hostmac)
-				.setDestinationMACAddress(eth.getSourceMACAddress())
-				.setEtherType(EthType.ARP)
-				.setPriorityCode(eth.getPriorityCode())
-				.setPayload(
-						new ARP()
-						.setHardwareType(ARP.HW_TYPE_ETHERNET)
-						.setProtocolType(ARP.PROTO_TYPE_IP)
-						.setHardwareAddressLength((byte) 6)
-						.setProtocolAddressLength((byte) 4)
-						.setOpCode(ARP.OP_REPLY)
-						.setSenderHardwareAddress(hostmac)
-						.setSenderProtocolAddress(arp.getTargetProtocolAddress())
-						.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-						.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-						);
-			sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
-			}
-			}
-//			else if (arp.getOpCode().equals(ARP.OP_REPLY))
+				if(arp.getSenderProtocolAddress().equals(IPv4Address.of("10.0.4.25")) && arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.1")))
+				{
+					IPacket arpReply = new Ethernet()
+					.setSourceMACAddress(hostmac)
+					.setDestinationMACAddress(eth.getSourceMACAddress())
+					.setEtherType(EthType.ARP)
+					.setPriorityCode(eth.getPriorityCode())
+					.setPayload(
+							new ARP()
+							.setHardwareType(ARP.HW_TYPE_ETHERNET)
+							.setProtocolType(ARP.PROTO_TYPE_IP)
+							.setHardwareAddressLength((byte) 6)
+							.setProtocolAddressLength((byte) 4)
+							.setOpCode(ARP.OP_REPLY)
+							.setSenderHardwareAddress(hostmac)
+							.setSenderProtocolAddress(gateway1)
+							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+							);
+				sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
+					return Command.STOP;
+				};
+				if(arp.getSenderProtocolAddress().equals(IPv4Address.of("10.0.2.15")) && arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.2.1")))
+				{
+					IPacket arpReply = new Ethernet()
+					.setSourceMACAddress(hostmac)
+					.setDestinationMACAddress(eth.getSourceMACAddress())
+					.setEtherType(EthType.ARP)
+					.setPriorityCode(eth.getPriorityCode())
+					.setPayload(
+							new ARP()
+							.setHardwareType(ARP.HW_TYPE_ETHERNET)
+							.setProtocolType(ARP.PROTO_TYPE_IP)
+							.setHardwareAddressLength((byte) 6)
+							.setProtocolAddressLength((byte) 4)
+							.setOpCode(ARP.OP_REPLY)
+							.setSenderHardwareAddress(hostmac)
+							.setSenderProtocolAddress(gateway2)
+							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+							);
+				sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
+					return Command.STOP;
+				};
+//			if(arp.getTargetProtocolAddress().equals(vm3ip))
 //			{
-//				if(macToPort.get(arp.getTargetHardwareAddress()) != null)
-//				{
-//					logger.info("Handle arp reply forward from {} to {}", arp.getSenderProtocolAddress().toString(), arp.getTargetProtocolAddress().toString());
-//					sendARPReply(arp, sw, OFPort.ZERO, macToPort.get(arp.getTargetHardwareAddress()));
-//				}
+//			IPacket arpReply = new Ethernet()
+//				.setSourceMACAddress(vm1mac)
+//				.setDestinationMACAddress(eth.getSourceMACAddress())
+//				.setEtherType(EthType.ARP)
+//				.setPriorityCode(eth.getPriorityCode())
+//				.setPayload(
+//						new ARP()
+//						.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//						.setProtocolType(ARP.PROTO_TYPE_IP)
+//						.setHardwareAddressLength((byte) 6)
+//						.setProtocolAddressLength((byte) 4)
+//						.setOpCode(ARP.OP_REPLY)
+//						.setSenderHardwareAddress(vm3mac)
+//						.setSenderProtocolAddress(vm3ip)
+//						.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+//						.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+//						);
+//			sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
 //			}
-			return Command.STOP;
+//			else if(arp.getTargetProtocolAddress().equals(vm4ip))
+//			{
+//				IPacket arpReply = new Ethernet()
+//				.setSourceMACAddress(vm2mac)
+//				.setDestinationMACAddress(eth.getSourceMACAddress())
+//				.setEtherType(EthType.ARP)
+//				.setPriorityCode(eth.getPriorityCode())
+//				.setPayload(
+//						new ARP()
+//						.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//						.setProtocolType(ARP.PROTO_TYPE_IP)
+//						.setHardwareAddressLength((byte) 6)
+//						.setProtocolAddressLength((byte) 4)
+//						.setOpCode(ARP.OP_REPLY)
+//						.setSenderHardwareAddress(vm4mac)
+//						.setSenderProtocolAddress(vm4ip)
+//						.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+//						.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+//						);
+//			sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
+//			}
+			}
+			// if it is a reply and target mac addr is that of host then save the port
+			
+			else if (arp.getOpCode().equals(ARP.OP_REPLY))
+			{
+				logger.info("arp replies : {}", arp);
+				if(arp.getTargetHardwareAddress().equals(hostmac))
+				{
+					macToPort.put(arp.getSenderHardwareAddress(), input_port);
+					return Command.STOP;
+				}
+			}
+			return ret1;
 			
 		}
 
@@ -626,7 +723,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 			if(eth.isBroadcast() || eth.isMulticast())
 			{
 				doFlood(sw, msg, cntx, match);
-				ret = Command.CONTINUE; // maybe drop this packet?
+				ret = Command.STOP; // maybe drop this packet?
 			}
 			
 			else
@@ -647,7 +744,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 								
 								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 								installAndSendout(sw, msg, cntx, match, actions);
-								logger.info("Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
+								// logger.info("Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
 								ret = Command.STOP;
 							}
 							
@@ -700,7 +797,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		// else if in port is TRUNK
 		else if (input_port == OFPort.of(TRUNK))
 		{
-			logger.info("coming from trunk port, Datapath id of switch {}", sw.getId().toString());
+			//logger.info("coming from trunk port, Datapath id of switch {}", sw.getId().toString());
 			Match m = createMatchFromPacket(sw, input_port, cntx);
 			// logger.info("Packet details {}",m.toString());
 			// IPv4 ipv4 = (IPv4) eth.getPayload();
@@ -757,7 +854,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 					{
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						installAndSendout(sw, msg, cntx, match, actions);
-						logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
+						//logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
 						ret = Command.STOP;
 					}
 					else // tagged
@@ -862,12 +959,67 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 			
 			else //unicast
 			{
+				IPv4 ipv4 = (IPv4) eth.getPayload();
+				
+				// if dest mac address is of host
+				// and dest ip address if not of host then act as router and change destination mac addresses
+				if(!ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.0.6")) && eth.getDestinationMACAddress().equals(MacAddress.of("52:52:00:01:15:06")))
+				{
+					if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.4.25")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.2.15")))
+					{
+						// do this from ip to mac table
+						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:e8:30:77"));
+					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
+					}
+					else if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.2.15")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.4.25")))
+					{
+						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:79:3d:56"));
+					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
+					}
+					
+					// if output port is not known then send ARP request
+					if(macToPort.get(eth.getDestinationMACAddress()) == null)
+					{
+						IPacket arpRequest = new Ethernet()
+						.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"))
+						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
+						.setEtherType(EthType.ARP)
+						.setPayload(
+								new ARP()
+								.setHardwareType(ARP.HW_TYPE_ETHERNET)
+								.setProtocolType(ARP.PROTO_TYPE_IP)
+								.setHardwareAddressLength((byte) 6)
+								.setProtocolAddressLength((byte) 4)
+								.setOpCode(ARP.OP_REQUEST)
+								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:06"))
+								.setSenderProtocolAddress(IPv4Address.of("10.0.2.1"))
+								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+								.setTargetProtocolAddress(ipv4.getDestinationAddress())
+								);
+						sendARPRequest(arpRequest, sw, OFPort.ZERO);
+						
+						//sleep while wating for arp reply
+//						try {
+//						    //TimeUnit.NANOSECONDS.sleep(100);
+//						    //TimeUnit.MICROSECONDS.sleep(100);
+//						    TimeUnit.MILLISECONDS.sleep(100);
+//						   } catch (InterruptedException e) {
+//						    logger.info("Error in sleeping : "+e);
+//						   }
+					}
+				}
+				
+
+				
+				logger.info("look here dest {}, src {}", ipv4.getDestinationAddress(), ipv4.getSourceAddress());
+				logger.info("look here whole packet eth {} and ipv4 {}", eth.toString(), ipv4.toString());
+				logger.info("mactoport {}", macToPort.toString());
+				
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
 					logger.info("Packet coming from access port, outport is known and is {} for mac address {}", 
 					macToPort.get(eth.getDestinationMACAddress()), eth.getDestinationMACAddress());
-					IPv4 ipv4 = (IPv4) eth.getPayload();
-					logger.info("look here dest {}, src {}", ipv4.getDestinationAddress(), ipv4.getSourceAddress());
+					logger.info("mac to port -> {}",macToPort.toString());
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					
 					if(output_port.getPortNumber() == TRUNK)
@@ -884,7 +1036,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 					else
 					{
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-						installAndSendout(sw, msg, cntx, match, actions);
+						installAndSendout(sw, msg, cntx, match, actions, eth);
 						ret = Command.STOP;
 					}
 				}
@@ -909,7 +1061,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 					actions.add(sw.getOFFactory().actions().setField(vlan));
 					
 					// add trunk port in output too
-					actions.add(sw.getOFFactory().actions().output(OFPort.of(TRUNK), Integer.MAX_VALUE));
+					//actions.add(sw.getOFFactory().actions().output(OFPort.of(TRUNK), Integer.MAX_VALUE));
 					
 					installAndSendout(sw, msg, cntx, match, actions);
 					ret = Command.STOP;
