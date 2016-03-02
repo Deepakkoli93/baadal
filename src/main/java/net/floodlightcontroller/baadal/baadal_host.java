@@ -94,7 +94,8 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 	MacAddress central_switch_mac = MacAddress.of("16:87:82:b3:a4:4d");
 	MacAddress dpid_nat_br = MacAddress.of("52:52:00:01:15:03");
 	MacAddress dpid_controller_br = MacAddress.of("52:52:00:01:15:02");
-	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();; 
+	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();
+	Map<IPv4Address, MacAddress> ipToMac = new HashMap<IPv4Address, MacAddress> ();
 	
 	
 	// taken from forwarding class
@@ -698,11 +699,8 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 			else if (arp.getOpCode().equals(ARP.OP_REPLY))
 			{
 				logger.info("arp replies : {}", arp);
-				if(arp.getTargetHardwareAddress().equals(hostmac))
-				{
-					macToPort.put(arp.getSenderHardwareAddress(), input_port);
-					return Command.STOP;
-				}
+				ipToMac.put(arp.getSenderProtocolAddress(), arp.getSenderHardwareAddress());
+
 			}
 			return ret1;
 			
@@ -965,19 +963,62 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 				// and dest ip address if not of host then act as router and change destination mac addresses
 				if(!ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.0.6")) && eth.getDestinationMACAddress().equals(MacAddress.of("52:52:00:01:15:06")))
 				{
-					if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.4.25")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.2.15")))
+//					if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.4.25")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.2.15")))
+//					{
+//						// do this from ip to mac table
+//						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:e8:30:77"));
+//					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
+//					}
+//					else if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.2.15")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.4.25")))
+//					{
+//						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:79:3d:56"));
+//					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
+//					}
+					logger.info("iptomac : {}", ipToMac);
+					// mac address is not known then send ARP request
+					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
 					{
-						// do this from ip to mac table
-						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:e8:30:77"));
-					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
-					}
-					else if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.2.15")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.4.25")))
-					{
-						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:79:3d:56"));
-					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
+						IPacket arpRequest = new Ethernet()
+						.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"))
+						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
+						.setEtherType(EthType.ARP)
+						.setPayload(
+								new ARP()
+								.setHardwareType(ARP.HW_TYPE_ETHERNET)
+								.setProtocolType(ARP.PROTO_TYPE_IP)
+								.setHardwareAddressLength((byte) 6)
+								.setProtocolAddressLength((byte) 4)
+								.setOpCode(ARP.OP_REQUEST)
+								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
+								.setSenderProtocolAddress(IPv4Address.of("10.0.0.6"))
+								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+								.setTargetProtocolAddress(ipv4.getDestinationAddress())
+								);
+						sendARPRequest(arpRequest, sw, OFPort.ZERO);
+	
+						//sleep while wating for arp reply
+						try {
+						    //TimeUnit.NANOSECONDS.sleep(100);
+						    //TimeUnit.MICROSECONDS.sleep(100);
+						    TimeUnit.MILLISECONDS.sleep(100);
+						   } catch (InterruptedException e) {
+						    logger.info("Error in sleeping : "+e);
+						   }
 					}
 					
-					// if output port is not known then send ARP request
+					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
+					{
+						// if still didn't resolve the mac address
+						return Command.STOP;
+					}
+					else
+					{
+						// change the ethernet frame to reflect the next hop mac address 
+						eth.setDestinationMACAddress(ipToMac.get(ipv4.getDestinationAddress()));
+					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));
+					}
+					
+					// if output port is not known 
 					if(macToPort.get(eth.getDestinationMACAddress()) == null)
 					{
 						IPacket arpRequest = new Ethernet()
@@ -991,22 +1032,25 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 								.setHardwareAddressLength((byte) 6)
 								.setProtocolAddressLength((byte) 4)
 								.setOpCode(ARP.OP_REQUEST)
-								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:06"))
-								.setSenderProtocolAddress(IPv4Address.of("10.0.2.1"))
+								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
+								.setSenderProtocolAddress(IPv4Address.of("10.0.0.6"))
 								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
 								.setTargetProtocolAddress(ipv4.getDestinationAddress())
 								);
 						sendARPRequest(arpRequest, sw, OFPort.ZERO);
-						
+	
 						//sleep while wating for arp reply
-//						try {
-//						    //TimeUnit.NANOSECONDS.sleep(100);
-//						    //TimeUnit.MICROSECONDS.sleep(100);
-//						    TimeUnit.MILLISECONDS.sleep(100);
-//						   } catch (InterruptedException e) {
-//						    logger.info("Error in sleeping : "+e);
-//						   }
+						try {
+						    //TimeUnit.NANOSECONDS.sleep(100);
+						    //TimeUnit.MICROSECONDS.sleep(100);
+						    TimeUnit.MILLISECONDS.sleep(100);
+						   } catch (InterruptedException e) {
+						    logger.info("Error in sleeping : "+e);
+						   }
 					}
+					
+					
+					
 				}
 				
 
@@ -1179,6 +1223,8 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		
 		portToTag.add(0,portToTag1);
 		portToTag.add(1,portToTag1);
+		
+		
 	}
 
 	@Override
