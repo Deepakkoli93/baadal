@@ -123,7 +123,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 
 		// Create flow-mod based on packet-in and src-switch
-		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		List<OFAction> actions = new ArrayList<OFAction>(); // no actions = drop
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
@@ -187,7 +187,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
-		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
@@ -250,7 +250,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
-		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
@@ -291,7 +291,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
-		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
@@ -344,7 +344,7 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
-		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowModify();
+		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
@@ -1073,8 +1073,8 @@ public class baadal_host implements IFloodlightModule, IOFMessageListener {
 						//actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
 						OFOxmVlanVid vlan = sw.getOFFactory().oxms().vlanVid(OFVlanVidMatch.ofVlanVid(outVlanTag));
 						actions.add(sw.getOFFactory().actions().setField(vlan));
-
-						installAndSendout(sw, msg, cntx, match, actions);
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+						installAndSendout(sw, msg, cntx, match, actions, eth);
 						ret = Command.STOP;
 					}
 					else
