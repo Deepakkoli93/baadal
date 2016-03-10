@@ -41,8 +41,10 @@ public class baadalHost {
 	Map<MacAddress, VlanVid> macToTag;
 	List<Map<OFPort, List<VlanVid> > > portToTag;
 	IPv4Address hostip;
+	Map<MacAddress, VlanVid> mac2Tag; 
 	
-	public baadalHost(Logger _logger, baadalUtils bu, List<MacAddress> _dpid_hosts, Map<MacAddress, VlanVid> _macToTag, List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip){
+	public baadalHost(Logger _logger, baadalUtils bu, List<MacAddress> _dpid_hosts, Map<MacAddress, VlanVid> _macToTag, 
+			List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip, Map<MacAddress, VlanVid> _mac2Tag){
 		logger = _logger;
 		macToPort = new HashMap<MacAddress, OFPort>();
 		ipToMac = new HashMap<IPv4Address, MacAddress> ();
@@ -51,6 +53,7 @@ public class baadalHost {
 		macToTag = _macToTag;
 		portToTag = _portToTag;
 		hostip = _hostip;
+		mac2Tag = _mac2Tag;
 	}
 
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
@@ -283,14 +286,13 @@ public class baadalHost {
 			// if packet is unicast
 			else
 			{
-				logger.info("in here vlan id is {}", vlanId.getVlan()); 
 				// my_match.dl_src = packet.src
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					if(vlanId.getVlan() == 0) // if untagged
 					{
-						logger.info("At trunk port, packet is untagged {} outport is {}", eth, output_port);
+						//logger.info("At trunk port, packet is untagged {} outport is {}", eth, output_port);
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
 						//logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
@@ -298,7 +300,6 @@ public class baadalHost {
 					}
 					else // tagged
 					{
-						
 						// strip the vlan tag
 						actions.add(sw.getOFFactory().actions().popVlan());
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
@@ -336,8 +337,6 @@ public class baadalHost {
 		}
 		else //inport is an access port
 		{
-			// macToTag global dict; learnt only when packets ingress from ACCESS port
-			//logger.info("host_index="+host_index+"input_port"+input_port+"src mac addr"+eth.getSourceMACAddress());			
 			macToTag.put(eth.getSourceMACAddress(), portToTag.get(host_index).get(input_port).get(0));
 			outVlanTag = portToTag.get(host_index).get(input_port).get(0);
 			
@@ -401,23 +400,14 @@ public class baadalHost {
 			{
 				IPv4 ipv4 = (IPv4) eth.getPayload();
 				
+				
 				// if dest mac address is of host
 				// and dest ip address if not of host then act as router and change destination mac addresses
 				if(!ipv4.getDestinationAddress().equals(hostip) && eth.getDestinationMACAddress().equals(hostMac))
 				{
-//					if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.4.25")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.2.15")))
-//					{
-//						// do this from ip to mac table
-//						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:e8:30:77"));
-//					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
-//					}
-//					else if(ipv4.getSourceAddress().equals(IPv4Address.of("10.0.2.15")) && ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.4.25")))
-//					{
-//						eth.setDestinationMACAddress(MacAddress.of("a2:00:00:79:3d:56"));
-//					    eth.setSourceMACAddress(MacAddress.of("52:52:00:01:15:06"));	
-//					}
+
 					logger.info("iptomac : {}", ipToMac);
-					// mac address is not known then send ARP request
+					// destination mac address is not known then send ARP request
 					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
 					{
 						IPacket arpRequest = new Ethernet()
@@ -503,27 +493,43 @@ public class baadalHost {
 				
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
-					/*logger.info("Packet coming from access port, outport is known and is {} for mac address {}", 
-					macToPort.get(eth.getDestinationMACAddress()), eth.getDestinationMACAddress());
-					logger.info("mac to port -> {}",macToPort.toString());*/
+					
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					
 					if(output_port.getPortNumber() == _baadalUtils.TRUNK)
 					{
+						// get vlan tag
+						outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
 						// push vlan tag
 						actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
 						//actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag)); this line causes an error, don't uncomment!
-						OFOxmVlanVid vlan = sw.getOFFactory().oxms().vlanVid(OFVlanVidMatch.ofVlan(99));
+						OFOxmVlanVid vlan = sw.getOFFactory().oxms().vlanVid(OFVlanVidMatch.ofVlanVid(outVlanTag));
 						actions.add(sw.getOFFactory().actions().setField(vlan));
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 						ret = Command.STOP;
 					}
-					else
+					else if(output_port.equals(OFPort.LOCAL))
 					{
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 						ret = Command.STOP;
+					}
+					// output port is access port
+					else
+					{
+						
+						if(mac2Tag.get(eth.getSourceMACAddress()).equals(mac2Tag.get(eth.getDestinationMACAddress())))
+						{
+							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
+							ret = Command.STOP;
+						}
+						else
+						{
+							_baadalUtils.doDropFlow(sw, msg, cntx, match);
+							ret = Command.STOP;
+						}
 					}
 				}
 				

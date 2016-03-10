@@ -60,6 +60,9 @@ public class baadalGeneral {
 		if (eth.getEtherType() == EthType.VLAN_FRAME){
 			logger.info("it's a vlan packet!");
 		IPv4 ipv44 = (IPv4) eth.getPayload();
+		if(!(ipv44.getSourceAddress().equals(IPv4Address.of("10.0.0.1")) ||ipv44.getDestinationAddress().equals(IPv4Address.of("10.0.0.1")) 
+				||ipv44.getSourceAddress().equals(IPv4Address.of("10.0.0.6"))
+				||ipv44.getDestinationAddress().equals(IPv4Address.of("10.0.0.6"))))
 		logger.info("from general ip {} {}", ipv44.getSourceAddress(), ipv44.getDestinationAddress());
 		}
 		MacAddress hostMac = MacAddress.of(sw.getId());
@@ -94,12 +97,12 @@ public class baadalGeneral {
 			if(macToPort.get(eth.getDestinationMACAddress()) == null)
 			{
 				_baadalUtils.doFlood(sw, msg, cntx, match);
-				logger.info("port not known for mac {}", eth.getDestinationMACAddress());
+				//logger.info("port not known for mac {}", eth.getDestinationMACAddress());
 				ret = Command.STOP;
 			}
 			else
 			{
-				logger.info("port KNOWN for mac {} and is {}", eth.getDestinationMACAddress(), macToPort.get(eth.getDestinationMACAddress()));
+				//logger.info("port KNOWN for mac {} and is {}", eth.getDestinationMACAddress(), macToPort.get(eth.getDestinationMACAddress()));
 				output_port = macToPort.get(eth.getDestinationMACAddress());
 				actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 				_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);

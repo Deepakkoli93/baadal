@@ -64,7 +64,7 @@ public class baadalUtils {
 	
 	public static boolean FLOOD_ALL_ARP_PACKETS = false;
 	
-	public  short LOCAL = (short) 65534; //baadal-br-int
+	public short LOCAL = (short) 65534; //baadal-br-int
 	public short TRUNK = 1; //eth0
 	
 	protected static ITopologyService topologyService;

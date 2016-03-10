@@ -83,6 +83,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener {
 	MacAddress dpid_controller_br = MacAddress.of("52:52:00:01:15:02");
 	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();
 	Map<IPv4Address, MacAddress> ipToMac = new HashMap<IPv4Address, MacAddress> ();
+	Map<MacAddress, VlanVid> mac2Tag = new HashMap<MacAddress, VlanVid>();
 	
 	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; // TODO: find sweet spot
 	protected static int OFMESSAGE_DAMPER_TIMEOUT = 250; // ms
@@ -767,17 +768,26 @@ public class Baadal implements IFloodlightModule, IOFMessageListener {
 		portToTag.add(0,portToTag1);
 		portToTag.add(1,portToTag1);
 		
+		// initialize mac to tag mapping
+		mac2Tag.put(MacAddress.of("a2:00:00:e5:7f:6f"), VlanVid.ofVlan(4));
+		mac2Tag.put(MacAddress.of("a2:00:00:a3:90:5c"), VlanVid.ofVlan(2));
+		mac2Tag.put(MacAddress.of("a2:00:00:6c:f8:ec"), VlanVid.ofVlan(4));
+		mac2Tag.put(MacAddress.of("a2:00:00:79:3d:56"), VlanVid.ofVlan(4));
+		mac2Tag.put(MacAddress.of("a2:00:00:e8:30:77"), VlanVid.ofVlan(2));
+		mac2Tag.put(MacAddress.of("a2:00:00:fc:a9:8b"), VlanVid.ofVlan(2));
+		mac2Tag.put(MacAddress.of("a2:00:00:94:e0:de"), VlanVid.ofVlan(4));
+		
 		// initialize baadalUtils;
 		bu = new baadalUtils(topologyService, messageDamper, APP_ID, logger);
 		
 		// initialize baadalHosts
-		bh1 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.6"));
-		bh2 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.7"));
+		bh1 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.6"), mac2Tag);
+		bh2 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.7"), mac2Tag);
 		
 		//initialize centrsal bridge
 		bg = new baadalGeneral(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.1"));
 		
-		
+
 	}
 
 	@Override
