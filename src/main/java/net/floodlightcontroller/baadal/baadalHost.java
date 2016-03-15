@@ -92,46 +92,14 @@ public class baadalHost {
 			{
 				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.1")))
 				{
-//					IPacket arpReply = new Ethernet()
-//					.setSourceMACAddress(hostMac)
-//					.setDestinationMACAddress(eth.getSourceMACAddress())
-//					.setEtherType(EthType.ARP)
-//					.setPriorityCode(eth.getPriorityCode())
-//					.setPayload(
-//							new ARP()
-//							.setHardwareType(ARP.HW_TYPE_ETHERNET)
-//							.setProtocolType(ARP.PROTO_TYPE_IP)
-//							.setHardwareAddressLength((byte) 6)
-//							.setProtocolAddressLength((byte) 4)
-//							.setOpCode(ARP.OP_REPLY)
-//							.setSenderHardwareAddress(hostMac)
-//							.setSenderProtocolAddress(gateway1)
-//							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-//							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-//							);
+
 				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
 						hostMac, gateway1, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
 					return Command.STOP;
 				};
 				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.2.1")))
 				{
-//					IPacket arpReply = new Ethernet()
-//					.setSourceMACAddress(hostMac)
-//					.setDestinationMACAddress(eth.getSourceMACAddress())
-//					.setEtherType(EthType.ARP)
-//					.setPriorityCode(eth.getPriorityCode())
-//					.setPayload(
-//							new ARP()
-//							.setHardwareType(ARP.HW_TYPE_ETHERNET)
-//							.setProtocolType(ARP.PROTO_TYPE_IP)
-//							.setHardwareAddressLength((byte) 6)
-//							.setProtocolAddressLength((byte) 4)
-//							.setOpCode(ARP.OP_REPLY)
-//							.setSenderHardwareAddress(hostMac)
-//							.setSenderProtocolAddress(gateway2)
-//							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-//							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-//							);
+
 				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
 						hostMac, gateway2, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
 					return Command.STOP;
@@ -240,7 +208,7 @@ public class baadalHost {
 		else if (input_port == OFPort.of(_baadalUtils.TRUNK))
 		{
 			//logger.info("coming from trunk port, Datapath id of switch {}", sw.getId().toString());
-			Match m = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
+			// Match m = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
 			// logger.info("Packet details {}",m.toString());
 			// IPv4 ipv4 = (IPv4) eth.getPayload();
 			// logger.info("Packet type {}", eth.getEtherType());
@@ -289,54 +257,104 @@ public class baadalHost {
 			else
 			{
 				IPv4 ipv4 = (IPv4)eth.getPayload();
-				if(macToPort.get(eth.getDestinationMACAddress()) != null)
-				{	
-					
-					output_port = macToPort.get(eth.getDestinationMACAddress());
-					if(vlanId.getVlan() == 0) // if untagged
-					{
-						//logger.info("At trunk port, packet is untagged {} outport is {}", eth, output_port);
-						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-						//logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
-						ret = Command.STOP;
-					}
-					else // tagged
-					{
-						// strip the vlan tag
-						actions.add(sw.getOFFactory().actions().popVlan());
-						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-						ret = Command.STOP;
-					}
-				
-				}
-				else //output port unknown
+				// if outpot port is not known then find it out
+				if(macToPort.get(eth.getDestinationMACAddress()) == null)
 				{
-					if(vlanId.getVlan() == 0) // if tagged
+
+					_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
+							ipv4.getDestinationAddress());
+
+					//sleep while wating for arp reply
+					try {
+					    //TimeUnit.NANOSECONDS.sleep(100);
+					    //TimeUnit.MICROSECONDS.sleep(100);
+					    TimeUnit.MILLISECONDS.sleep(100);
+					   } catch (InterruptedException e) {
+					    logger.info("Error in sleeping : "+e);
+					   }
+				}
+				
+				if(macToPort.get(eth.getDestinationMACAddress()) == null)
+				{
+					// if still didn't resolve the mac address
+					return Command.STOP;
+				}
+				// now we definitely have the output port
+				else
+				{
+					output_port = macToPort.get(eth.getDestinationMACAddress());
+					
+					if(output_port.getPortNumber() == _baadalUtils.TRUNK || output_port.equals(OFPort.LOCAL))
 					{
-						//flood and install flow
-						_baadalUtils.doFlood(sw, msg, cntx, match, actions);
-						ret = Command.STOP;
-					}
-					else // untagged
-					{
-						// find ports in vlan "out_vlan_tag"
-						List<OFPort> ports = _baadalUtils.find_tagToPort(vlanId, host_index, portToTag);
-						ports.remove(OFPort.of(_baadalUtils.TRUNK));
-						
-						// strip the vlan tag
-						actions.add(sw.getOFFactory().actions().popVlan());
-						
-						// adding access ports in the vlan to out port list
-						for(OFPort port : ports)
-							actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
-						
-						actions.add(sw.getOFFactory().actions().output(OFPort.of(_baadalUtils.LOCAL), Integer.MAX_VALUE));
+						// if input and output port both are trunk then just send it out 
+						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-						ret = Command.STOP;
+						return Command.STOP;
+					}
+					else // outport is access port
+					{
+						if(vlanId.equals(mac2Tag.get(eth.getDestinationMACAddress())))
+						{
+							actions.add(sw.getOFFactory().actions().popVlan());
+							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+							ret = Command.STOP;
+						}
+						else
+						{
+							_baadalUtils.doDropFlow(sw, msg, cntx, match);
+							ret = Command.STOP;
+						}
 					}
 				}
+//				if(macToPort.get(eth.getDestinationMACAddress()) != null)
+//				{	
+//					
+//					output_port = macToPort.get(eth.getDestinationMACAddress());
+//					if(vlanId.getVlan() == 0) // if untagged
+//					{
+//						//logger.info("At trunk port, packet is untagged {} outport is {}", eth, output_port);
+//						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+//						//logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
+//						ret = Command.STOP;
+//					}
+//					else // tagged
+//					{
+//						// strip the vlan tag
+//						actions.add(sw.getOFFactory().actions().popVlan());
+//						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+//						ret = Command.STOP;
+//					}
+//				
+//				}
+//				else //output port unknown
+//				{
+//					if(vlanId.getVlan() == 0) // if tagged
+//					{
+//						//flood and install flow
+//						_baadalUtils.doFlood(sw, msg, cntx, match, actions);
+//						ret = Command.STOP;
+//					}
+//					else // untagged
+//					{
+//						// find ports in vlan "out_vlan_tag"
+//						List<OFPort> ports = _baadalUtils.find_tagToPort(vlanId, host_index, portToTag);
+//						ports.remove(OFPort.of(_baadalUtils.TRUNK));
+//						
+//						// strip the vlan tag
+//						actions.add(sw.getOFFactory().actions().popVlan());
+//						
+//						// adding access ports in the vlan to out port list
+//						for(OFPort port : ports)
+//							actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
+//						
+//						actions.add(sw.getOFFactory().actions().output(OFPort.of(_baadalUtils.LOCAL), Integer.MAX_VALUE));
+//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+//						ret = Command.STOP;
+//					}
+//				}
 			}
 		}
 		else //inport is an access port
@@ -416,22 +434,7 @@ public class baadalHost {
 					// destination mac address is not known then send ARP request
 					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
 					{
-//						IPacket arpRequest = new Ethernet()
-//						.setSourceMACAddress(hostMac)
-//						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
-//						.setEtherType(EthType.ARP)
-//						.setPayload(
-//								new ARP()
-//								.setHardwareType(ARP.HW_TYPE_ETHERNET)
-//								.setProtocolType(ARP.PROTO_TYPE_IP)
-//								.setHardwareAddressLength((byte) 6)
-//								.setProtocolAddressLength((byte) 4)
-//								.setOpCode(ARP.OP_REQUEST)
-//								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
-//								.setSenderProtocolAddress(hostip)
-//								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
-//								.setTargetProtocolAddress(ipv4.getDestinationAddress())
-//								);
+
 						_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
 								ipv4.getDestinationAddress());
 	
@@ -463,22 +466,7 @@ public class baadalHost {
 					// if output port is not known 
 					if(macToPort.get(eth.getDestinationMACAddress()) == null)
 					{
-//						IPacket arpRequest = new Ethernet()
-//						.setSourceMACAddress(hostMac)
-//						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
-//						.setEtherType(EthType.ARP)
-//						.setPayload(
-//								new ARP()
-//								.setHardwareType(ARP.HW_TYPE_ETHERNET)
-//								.setProtocolType(ARP.PROTO_TYPE_IP)
-//								.setHardwareAddressLength((byte) 6)
-//								.setProtocolAddressLength((byte) 4)
-//								.setOpCode(ARP.OP_REQUEST)
-//								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
-//								.setSenderProtocolAddress(hostip)
-//								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
-//								.setTargetProtocolAddress(ipv4.getDestinationAddress())
-//								);
+
 						_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
 								ipv4.getDestinationAddress());
 	
@@ -533,12 +521,14 @@ public class baadalHost {
 						
 						if(mac2Tag.get(eth.getSourceMACAddress()).equals(mac2Tag.get(eth.getDestinationMACAddress())))
 						{
+							actions.add(sw.getOFFactory().actions().popVlan());
 							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 							ret = Command.STOP;
 						}
 						else
 						{
+							// logger.info("look at the changed match here -> {}", match);
 							_baadalUtils.doDropFlow(sw, msg, cntx, match);
 							ret = Command.STOP;
 						}
