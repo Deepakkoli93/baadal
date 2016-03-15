@@ -11,6 +11,7 @@ import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IFloodlightProviderService;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.core.util.AppCookie;
+import net.floodlightcontroller.packet.ARP;
 import net.floodlightcontroller.packet.DHCP;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.IPacket;
@@ -456,7 +457,31 @@ public class baadalUtils {
 		return ports;
 	}
 	
-	public void sendARPReply(IPacket packet, IOFSwitch sw, OFPort inPort, OFPort outPort) {
+	public void sendARPReply(IOFSwitch sw, OFPort inPort, OFPort outPort,
+			MacAddress sourceMacAddress, MacAddress destinationMacAddress, byte priorityCode,
+			MacAddress senderHardwareAddress, IPv4Address senderProtocolAddress,
+			MacAddress targetHardwareAddress, IPv4Address targetProtocolAddress) {
+		
+		 // create a packet out message and set its fields
+		IPacket arpReply = new Ethernet()
+		.setSourceMACAddress(sourceMacAddress)
+		.setDestinationMACAddress(destinationMacAddress)
+		.setEtherType(EthType.ARP)
+		.setPriorityCode(priorityCode)
+		.setPayload(
+				new ARP()
+				.setHardwareType(ARP.HW_TYPE_ETHERNET)
+				.setProtocolType(ARP.PROTO_TYPE_IP)
+				.setHardwareAddressLength((byte) 6)
+				.setProtocolAddressLength((byte) 4)
+				.setOpCode(ARP.OP_REPLY)
+				.setSenderHardwareAddress(senderHardwareAddress)
+				.setSenderProtocolAddress(senderProtocolAddress)
+				.setTargetHardwareAddress(targetHardwareAddress)
+				.setTargetProtocolAddress(targetProtocolAddress)
+				);
+		
+		
 		
 		// Initialize a packet out
 		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
@@ -470,7 +495,7 @@ public class baadalUtils {
 		//po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
 		
 		// Set packet data and length
-		byte[] packetData = packet.serialize();
+		byte[] packetData = arpReply.serialize();
 		pob.setData(packetData);
 		//pob.setLength((short) (OFPacketOut.MINIMUM_LENGTH + po.getActionsLength() + packetData.length));
 		
@@ -487,8 +512,27 @@ public class baadalUtils {
 		}
 	}
 	
-	public void sendARPRequest(IPacket packet, IOFSwitch sw, OFPort inPort) {
-		
+	public void sendARPRequest(IOFSwitch sw, OFPort inPort, MacAddress sourceMacAddress,
+			MacAddress senderHardwareAddress, IPv4Address senderProtocolAddress,
+			IPv4Address targetProtocolAddress
+			) {
+		// packet out and set fields
+		IPacket arpRequest = new Ethernet()
+		.setSourceMACAddress(sourceMacAddress)
+		.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
+		.setEtherType(EthType.ARP)
+		.setPayload(
+				new ARP()
+				.setHardwareType(ARP.HW_TYPE_ETHERNET)
+				.setProtocolType(ARP.PROTO_TYPE_IP)
+				.setHardwareAddressLength((byte) 6)
+				.setProtocolAddressLength((byte) 4)
+				.setOpCode(ARP.OP_REQUEST)
+				.setSenderHardwareAddress(senderHardwareAddress)  // an unassigned mac id that it generates a PACKET_IN
+				.setSenderProtocolAddress(senderProtocolAddress)
+				.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+				.setTargetProtocolAddress(targetProtocolAddress)
+				);
 		// Initialize a packet out
 		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
 		pob.setBufferId(OFBufferId.NO_BUFFER);
@@ -512,7 +556,7 @@ public class baadalUtils {
 		//po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
 		
 		// Set packet data and length
-		byte[] packetData = packet.serialize();
+		byte[] packetData = arpRequest.serialize();
 		pob.setData(packetData);
 		//pob.setLength((short) (OFPacketOut.MINIMUM_LENGTH + po.getActionsLength() + packetData.length));
 		

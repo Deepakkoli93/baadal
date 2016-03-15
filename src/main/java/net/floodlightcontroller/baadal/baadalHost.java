@@ -92,46 +92,48 @@ public class baadalHost {
 			{
 				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.1")))
 				{
-					IPacket arpReply = new Ethernet()
-					.setSourceMACAddress(hostMac)
-					.setDestinationMACAddress(eth.getSourceMACAddress())
-					.setEtherType(EthType.ARP)
-					.setPriorityCode(eth.getPriorityCode())
-					.setPayload(
-							new ARP()
-							.setHardwareType(ARP.HW_TYPE_ETHERNET)
-							.setProtocolType(ARP.PROTO_TYPE_IP)
-							.setHardwareAddressLength((byte) 6)
-							.setProtocolAddressLength((byte) 4)
-							.setOpCode(ARP.OP_REPLY)
-							.setSenderHardwareAddress(hostMac)
-							.setSenderProtocolAddress(gateway1)
-							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-							);
-				_baadalUtils.sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
+//					IPacket arpReply = new Ethernet()
+//					.setSourceMACAddress(hostMac)
+//					.setDestinationMACAddress(eth.getSourceMACAddress())
+//					.setEtherType(EthType.ARP)
+//					.setPriorityCode(eth.getPriorityCode())
+//					.setPayload(
+//							new ARP()
+//							.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//							.setProtocolType(ARP.PROTO_TYPE_IP)
+//							.setHardwareAddressLength((byte) 6)
+//							.setProtocolAddressLength((byte) 4)
+//							.setOpCode(ARP.OP_REPLY)
+//							.setSenderHardwareAddress(hostMac)
+//							.setSenderProtocolAddress(gateway1)
+//							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+//							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+//							);
+				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
+						hostMac, gateway1, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
 					return Command.STOP;
 				};
 				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.2.1")))
 				{
-					IPacket arpReply = new Ethernet()
-					.setSourceMACAddress(hostMac)
-					.setDestinationMACAddress(eth.getSourceMACAddress())
-					.setEtherType(EthType.ARP)
-					.setPriorityCode(eth.getPriorityCode())
-					.setPayload(
-							new ARP()
-							.setHardwareType(ARP.HW_TYPE_ETHERNET)
-							.setProtocolType(ARP.PROTO_TYPE_IP)
-							.setHardwareAddressLength((byte) 6)
-							.setProtocolAddressLength((byte) 4)
-							.setOpCode(ARP.OP_REPLY)
-							.setSenderHardwareAddress(hostMac)
-							.setSenderProtocolAddress(gateway2)
-							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
-							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
-							);
-				_baadalUtils.sendARPReply(arpReply, sw, OFPort.ZERO, input_port);
+//					IPacket arpReply = new Ethernet()
+//					.setSourceMACAddress(hostMac)
+//					.setDestinationMACAddress(eth.getSourceMACAddress())
+//					.setEtherType(EthType.ARP)
+//					.setPriorityCode(eth.getPriorityCode())
+//					.setPayload(
+//							new ARP()
+//							.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//							.setProtocolType(ARP.PROTO_TYPE_IP)
+//							.setHardwareAddressLength((byte) 6)
+//							.setProtocolAddressLength((byte) 4)
+//							.setOpCode(ARP.OP_REPLY)
+//							.setSenderHardwareAddress(hostMac)
+//							.setSenderProtocolAddress(gateway2)
+//							.setTargetHardwareAddress(arp.getSenderHardwareAddress())
+//							.setTargetProtocolAddress(arp.getSenderProtocolAddress())
+//							);
+				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
+						hostMac, gateway2, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
 					return Command.STOP;
 				};
 
@@ -286,9 +288,10 @@ public class baadalHost {
 			// if packet is unicast
 			else
 			{
-				// my_match.dl_src = packet.src
+				IPv4 ipv4 = (IPv4)eth.getPayload();
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
-				{
+				{	
+					
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					if(vlanId.getVlan() == 0) // if untagged
 					{
@@ -306,6 +309,7 @@ public class baadalHost {
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
 						ret = Command.STOP;
 					}
+				
 				}
 				else //output port unknown
 				{
@@ -338,7 +342,8 @@ public class baadalHost {
 		else //inport is an access port
 		{
 			macToTag.put(eth.getSourceMACAddress(), portToTag.get(host_index).get(input_port).get(0));
-			outVlanTag = portToTag.get(host_index).get(input_port).get(0);
+			outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
+			//logger.info("look at the vlan tag {}", outVlanTag);
 			
 			// if broadcast
 			if(eth.isBroadcast())
@@ -398,6 +403,7 @@ public class baadalHost {
 			
 			else //unicast
 			{
+				
 				IPv4 ipv4 = (IPv4) eth.getPayload();
 				
 				
@@ -410,23 +416,24 @@ public class baadalHost {
 					// destination mac address is not known then send ARP request
 					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
 					{
-						IPacket arpRequest = new Ethernet()
-						.setSourceMACAddress(hostMac)
-						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
-						.setEtherType(EthType.ARP)
-						.setPayload(
-								new ARP()
-								.setHardwareType(ARP.HW_TYPE_ETHERNET)
-								.setProtocolType(ARP.PROTO_TYPE_IP)
-								.setHardwareAddressLength((byte) 6)
-								.setProtocolAddressLength((byte) 4)
-								.setOpCode(ARP.OP_REQUEST)
-								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
-								.setSenderProtocolAddress(hostip)
-								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
-								.setTargetProtocolAddress(ipv4.getDestinationAddress())
-								);
-						_baadalUtils.sendARPRequest(arpRequest, sw, OFPort.ZERO);
+//						IPacket arpRequest = new Ethernet()
+//						.setSourceMACAddress(hostMac)
+//						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
+//						.setEtherType(EthType.ARP)
+//						.setPayload(
+//								new ARP()
+//								.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//								.setProtocolType(ARP.PROTO_TYPE_IP)
+//								.setHardwareAddressLength((byte) 6)
+//								.setProtocolAddressLength((byte) 4)
+//								.setOpCode(ARP.OP_REQUEST)
+//								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
+//								.setSenderProtocolAddress(hostip)
+//								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+//								.setTargetProtocolAddress(ipv4.getDestinationAddress())
+//								);
+						_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
+								ipv4.getDestinationAddress());
 	
 						//sleep while wating for arp reply
 						try {
@@ -450,26 +457,30 @@ public class baadalHost {
 					    eth.setSourceMACAddress(hostMac);
 					}
 					
+					// re create the match after packet has changed
+					match = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
+					
 					// if output port is not known 
 					if(macToPort.get(eth.getDestinationMACAddress()) == null)
 					{
-						IPacket arpRequest = new Ethernet()
-						.setSourceMACAddress(hostMac)
-						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
-						.setEtherType(EthType.ARP)
-						.setPayload(
-								new ARP()
-								.setHardwareType(ARP.HW_TYPE_ETHERNET)
-								.setProtocolType(ARP.PROTO_TYPE_IP)
-								.setHardwareAddressLength((byte) 6)
-								.setProtocolAddressLength((byte) 4)
-								.setOpCode(ARP.OP_REQUEST)
-								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
-								.setSenderProtocolAddress(hostip)
-								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
-								.setTargetProtocolAddress(ipv4.getDestinationAddress())
-								);
-						_baadalUtils.sendARPRequest(arpRequest, sw, OFPort.ZERO);
+//						IPacket arpRequest = new Ethernet()
+//						.setSourceMACAddress(hostMac)
+//						.setDestinationMACAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
+//						.setEtherType(EthType.ARP)
+//						.setPayload(
+//								new ARP()
+//								.setHardwareType(ARP.HW_TYPE_ETHERNET)
+//								.setProtocolType(ARP.PROTO_TYPE_IP)
+//								.setHardwareAddressLength((byte) 6)
+//								.setProtocolAddressLength((byte) 4)
+//								.setOpCode(ARP.OP_REQUEST)
+//								.setSenderHardwareAddress(MacAddress.of("52:52:00:01:15:99"))  // an unassigned mac id that it generates a PACKET_IN
+//								.setSenderProtocolAddress(hostip)
+//								.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+//								.setTargetProtocolAddress(ipv4.getDestinationAddress())
+//								);
+						_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
+								ipv4.getDestinationAddress());
 	
 						//sleep while wating for arp reply
 						try {
@@ -494,12 +505,13 @@ public class baadalHost {
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
 					
+					
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					
 					if(output_port.getPortNumber() == _baadalUtils.TRUNK)
 					{
 						// get vlan tag
-						outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
+						// outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
 						// push vlan tag
 						actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
 						//actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag)); this line causes an error, don't uncomment!

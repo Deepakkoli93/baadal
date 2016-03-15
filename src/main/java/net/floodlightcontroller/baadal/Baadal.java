@@ -776,6 +776,8 @@ public class Baadal implements IFloodlightModule, IOFMessageListener {
 		mac2Tag.put(MacAddress.of("a2:00:00:e8:30:77"), VlanVid.ofVlan(2));
 		mac2Tag.put(MacAddress.of("a2:00:00:fc:a9:8b"), VlanVid.ofVlan(2));
 		mac2Tag.put(MacAddress.of("a2:00:00:94:e0:de"), VlanVid.ofVlan(4));
+		mac2Tag.put(MacAddress.of("52:52:00:01:15:06"), VlanVid.ofVlan(0));
+		mac2Tag.put(MacAddress.of("52:52:00:01:15:07"), VlanVid.ofVlan(0));
 		
 		// initialize baadalUtils;
 		bu = new baadalUtils(topologyService, messageDamper, APP_ID, logger);
