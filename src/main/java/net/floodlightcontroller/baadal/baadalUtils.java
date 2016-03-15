@@ -49,7 +49,7 @@ public class baadalUtils {
 	
 
 
-	public static int FLOWMOD_DEFAULT_IDLE_TIMEOUT = 5; // in seconds
+	public static int FLOWMOD_DEFAULT_IDLE_TIMEOUT = 15; // in seconds
 	public static int FLOWMOD_DEFAULT_HARD_TIMEOUT = 0; // infinite
 	public static int FLOWMOD_DEFAULT_PRIORITY = 1; // 0 is the default table-miss flow in OF1.3+, so we need to use 1
 	

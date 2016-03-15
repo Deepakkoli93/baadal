@@ -42,6 +42,7 @@ public class baadalHost {
 	List<Map<OFPort, List<VlanVid> > > portToTag;
 	IPv4Address hostip;
 	Map<MacAddress, VlanVid> mac2Tag; 
+	boolean ENABLE_INTER_VLAN_ROUTING;
 	
 	public baadalHost(Logger _logger, baadalUtils bu, List<MacAddress> _dpid_hosts, Map<MacAddress, VlanVid> _macToTag, 
 			List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip, Map<MacAddress, VlanVid> _mac2Tag){
@@ -54,6 +55,7 @@ public class baadalHost {
 		portToTag = _portToTag;
 		hostip = _hostip;
 		mac2Tag = _mac2Tag;
+		ENABLE_INTER_VLAN_ROUTING = true;
 	}
 
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
@@ -293,7 +295,7 @@ public class baadalHost {
 					}
 					else // outport is access port
 					{
-						if(vlanId.equals(mac2Tag.get(eth.getDestinationMACAddress())))
+						if(ENABLE_INTER_VLAN_ROUTING)
 						{
 							actions.add(sw.getOFFactory().actions().popVlan());
 							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
@@ -302,8 +304,18 @@ public class baadalHost {
 						}
 						else
 						{
-							_baadalUtils.doDropFlow(sw, msg, cntx, match);
-							ret = Command.STOP;
+							if(vlanId.equals(mac2Tag.get(eth.getDestinationMACAddress())))
+							{
+								actions.add(sw.getOFFactory().actions().popVlan());
+								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+								ret = Command.STOP;
+							}
+							else
+							{
+								_baadalUtils.doDropFlow(sw, msg, cntx, match);
+								ret = Command.STOP;
+							}
 						}
 					}
 				}
@@ -439,13 +451,13 @@ public class baadalHost {
 								ipv4.getDestinationAddress());
 	
 						//sleep while wating for arp reply
-						try {
-						    //TimeUnit.NANOSECONDS.sleep(100);
-						    //TimeUnit.MICROSECONDS.sleep(100);
-						    TimeUnit.MILLISECONDS.sleep(100);
-						   } catch (InterruptedException e) {
-						    logger.info("Error in sleeping : "+e);
-						   }
+//						try {
+//						    //TimeUnit.NANOSECONDS.sleep(100);
+//						    //TimeUnit.MICROSECONDS.sleep(100);
+//						    TimeUnit.MILLISECONDS.sleep(100);
+//						   } catch (InterruptedException e) {
+//						    logger.info("Error in sleeping : "+e);
+//						   }
 					}
 					
 					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
@@ -518,19 +530,26 @@ public class baadalHost {
 					// output port is access port
 					else
 					{
-						
-						if(mac2Tag.get(eth.getSourceMACAddress()).equals(mac2Tag.get(eth.getDestinationMACAddress())))
+						if(ENABLE_INTER_VLAN_ROUTING)
 						{
-							actions.add(sw.getOFFactory().actions().popVlan());
 							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 							ret = Command.STOP;
 						}
 						else
 						{
-							// logger.info("look at the changed match here -> {}", match);
-							_baadalUtils.doDropFlow(sw, msg, cntx, match);
-							ret = Command.STOP;
+							if(mac2Tag.get(eth.getSourceMACAddress()).equals(mac2Tag.get(eth.getDestinationMACAddress())))
+							{
+								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
+								ret = Command.STOP;
+							}
+							else
+							{
+								// logger.info("look at the changed match here -> {}", match);
+								_baadalUtils.doDropFlow(sw, msg, cntx, match);
+								ret = Command.STOP;
+							}
 						}
 					}
 				}
