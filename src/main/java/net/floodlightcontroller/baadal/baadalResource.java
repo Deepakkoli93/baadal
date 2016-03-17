@@ -13,22 +13,7 @@ public class baadalResource extends ServerResource{
 	 * @return
 	 */
 	 @Get("json")
-	 public Object handleRequest() {
-//		 String op = (String) getRequestAttributes().get("op");
-//	        IQoSService qos = 
-//	                (IQoSService)getContext().getAttributes().
-//	                get(IQoSService.class.getCanonicalName());
-//	        
-//	        if (op.equalsIgnoreCase("enable")) {
-//	            qos.enableQoS(true);
-//	            return "{\"status\" : \"success\", \"details\" : \"QoS Enabled\"}";
-//	        }else if (op.equalsIgnoreCase("status")) {
-//	            return qos.isEnabled();
-//	        }else if (op.equalsIgnoreCase("disable")) {
-//	        	qos.enableQoS(false);
-//	         return "{\"status\" : \"success\", \"details\" : \"QoS Disabled\"}";
-//	        }
-//		 
+	 public Object handleRequest() {		 
 		 return "{\"status\" : \"failure\", \"details\" : \"Invalid Operation\"}";
 	 }
 	

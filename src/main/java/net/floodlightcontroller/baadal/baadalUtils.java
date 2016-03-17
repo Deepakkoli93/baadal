@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IFloodlightProviderService;
@@ -72,6 +73,8 @@ public class baadalUtils {
 	protected static OFMessageDamper messageDamper ;
 	private static short APP_ID;
 	
+	public static enum policyDecision{ ALLOW, DISALLOW, DEFAULT}
+	
 	public baadalUtils(ITopologyService _topologyService, OFMessageDamper _messageDamper, short _APP_ID, Logger _logger){
 		topologyService = _topologyService;
 		messageDamper = _messageDamper;
@@ -102,8 +105,8 @@ public class baadalUtils {
 		List<OFAction> actions = new ArrayList<OFAction>(); // no actions = drop
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
-		.setIdleTimeout(ForwardingBase.FLOWMOD_DEFAULT_IDLE_TIMEOUT)
-		.setHardTimeout(ForwardingBase.FLOWMOD_DEFAULT_HARD_TIMEOUT)
+		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
 		.setBufferId(OFBufferId.NO_BUFFER)
 		.setMatch(match)
 		.setActions(actions);
@@ -571,6 +574,43 @@ public class baadalUtils {
 			logger.error("Failure writing installAndSendout switch={} packet-out={}",
 					new Object[] {sw, pob.build()}, e);
 		}
+	}
+	
+	policyDecision getPolicy(ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > interVmPolicy, IPv4Address src, IPv4Address dst)
+	{
+		logger.info("intervmpolicy {}", interVmPolicy);
+		policyDecision ret = policyDecision.DEFAULT;
+		if(interVmPolicy.get(src) == null && interVmPolicy.get(dst) == null) // the entry does not exists in the table
+		{
+			ret = policyDecision.DEFAULT;
+		}
+		else if (interVmPolicy.get(src) == null) //dst is there as first 
+		{
+			if(interVmPolicy.get(dst).get(src) == null) //dst is first but src is not second
+				ret = policyDecision.DEFAULT;
+			else //dst is first and src is second
+				ret = interVmPolicy.get(dst).get(src) == true? policyDecision.ALLOW : policyDecision.DISALLOW;
+		}
+		else if (interVmPolicy.get(dst) == null) // src is there as first
+		{
+			if(interVmPolicy.get(src) == null) //src is first but dst is not second
+				ret = policyDecision.DEFAULT;
+			else //src is first and dst is second
+				ret = interVmPolicy.get(src).get(dst) == true? policyDecision.ALLOW : policyDecision.DISALLOW; 
+		}
+		
+		else // none of them is null
+		{
+			if(interVmPolicy.get(src).get(dst) != null)
+				ret = interVmPolicy.get(src).get(dst) == true? policyDecision.ALLOW : policyDecision.DISALLOW;
+			else if (interVmPolicy.get(dst).get(src) != null)
+				ret = interVmPolicy.get(dst).get(src) == true? policyDecision.ALLOW : policyDecision.DISALLOW;
+			else//they both were at first position but the pair could not be made
+				ret = policyDecision.DEFAULT;
+		}
+		
+		logger.info("decision {}", ret);
+		return ret;
 	}
 
 }

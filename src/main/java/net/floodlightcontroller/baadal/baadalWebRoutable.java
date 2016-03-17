@@ -10,11 +10,8 @@ public class baadalWebRoutable implements RestletRoutable{
 
 	@Override
 	public Restlet getRestlet(Context context) {
-		// TODO Auto-generated method stub
         Router router = new Router(context);
-        //router.attach("/tool/{op}/json", baadalResource.class);
-         router.attach("/service/json", baadalResource.class);
-        // router.attach("/policy/json", QoSPoliciesResource.class);
+         router.attach("/mac2tagentry/json", baadalResource.class);
         return router;
 	}
 

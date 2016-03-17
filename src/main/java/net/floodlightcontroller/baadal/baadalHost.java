@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -41,11 +42,14 @@ public class baadalHost {
 	Map<MacAddress, VlanVid> macToTag;
 	List<Map<OFPort, List<VlanVid> > > portToTag;
 	IPv4Address hostip;
-	Map<MacAddress, VlanVid> mac2Tag; 
+	Map<IPv4Address, VlanVid> ipToTag; 
 	boolean ENABLE_INTER_VLAN_ROUTING;
+	ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > interVmPolicy;
+	//public enum policyDecision{ ALLOW, DISALLOW, DEFAULT}
 	
 	public baadalHost(Logger _logger, baadalUtils bu, List<MacAddress> _dpid_hosts, Map<MacAddress, VlanVid> _macToTag, 
-			List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip, Map<MacAddress, VlanVid> _mac2Tag){
+			List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip, Map<IPv4Address, VlanVid> _ipToTag,
+			ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > _interVmPolicy){
 		logger = _logger;
 		macToPort = new HashMap<MacAddress, OFPort>();
 		ipToMac = new HashMap<IPv4Address, MacAddress> ();
@@ -54,10 +58,15 @@ public class baadalHost {
 		macToTag = _macToTag;
 		portToTag = _portToTag;
 		hostip = _hostip;
-		mac2Tag = _mac2Tag;
-		ENABLE_INTER_VLAN_ROUTING = true;
+		ipToTag = _ipToTag;
+		ENABLE_INTER_VLAN_ROUTING = false;
+		interVmPolicy = _interVmPolicy;
 	}
-
+	
+	public void setIPToTag(Map<IPv4Address, VlanVid> _ipToTag)
+	{
+		ipToTag = _ipToTag;
+	}
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx,
 				IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
@@ -288,34 +297,61 @@ public class baadalHost {
 					
 					if(output_port.getPortNumber() == _baadalUtils.TRUNK || output_port.equals(OFPort.LOCAL))
 					{
-						// if input and output port both are trunk then just send it out 
 						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
 						return Command.STOP;
 					}
 					else // outport is access port
 					{
-						if(ENABLE_INTER_VLAN_ROUTING)
+						if(vlanId.equals(VlanVid.ZERO)) //if untagged
 						{
-							actions.add(sw.getOFFactory().actions().popVlan());
 							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
 							ret = Command.STOP;
 						}
-						else
+						else // tagged
 						{
-							if(vlanId.equals(mac2Tag.get(eth.getDestinationMACAddress())))
-							{
+							logger.info("decision here {}", _baadalUtils.getPolicy(interVmPolicy, ipv4.getSourceAddress(), ipv4.getDestinationAddress()));
+
+							switch(_baadalUtils.getPolicy(interVmPolicy, ipv4.getSourceAddress(), ipv4.getDestinationAddress())){
+							case ALLOW:
 								actions.add(sw.getOFFactory().actions().popVlan());
 								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 								ret = Command.STOP;
-							}
-							else
-							{
+								break;
+							case DISALLOW:
 								_baadalUtils.doDropFlow(sw, msg, cntx, match);
 								ret = Command.STOP;
-							}
+								break;
+							case DEFAULT:
+								if(ENABLE_INTER_VLAN_ROUTING)
+								{
+									actions.add(sw.getOFFactory().actions().popVlan());
+									actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+									_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+									ret = Command.STOP;
+								}
+								else //inter vlan routing is disabled
+								{
+									if(vlanId.equals(ipToTag.get(ipv4.getDestinationAddress()))) // if tag is same as that of destination
+									{
+										actions.add(sw.getOFFactory().actions().popVlan());
+										actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+										_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
+										ret = Command.STOP;
+									}
+									else // tag is different from that of destination
+									{
+										_baadalUtils.doDropFlow(sw, msg, cntx, match);
+										ret = Command.STOP;
+									}
+								}
+								break;
+							default:
+								logger.warn("Unexpected policy decision, dropping packet");
+								return Command.STOP;
+						  }
 						}
 					}
 				}
@@ -371,8 +407,9 @@ public class baadalHost {
 		}
 		else //inport is an access port
 		{
+			IPv4 ipv4 = (IPv4)eth.getPayload();
 			macToTag.put(eth.getSourceMACAddress(), portToTag.get(host_index).get(input_port).get(0));
-			outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
+			outVlanTag = ipToTag.get(ipv4.getSourceAddress());
 			//logger.info("look at the vlan tag {}", outVlanTag);
 			
 			// if broadcast
@@ -434,7 +471,7 @@ public class baadalHost {
 			else //unicast
 			{
 				
-				IPv4 ipv4 = (IPv4) eth.getPayload();
+				//IPv4 ipv4 = (IPv4) eth.getPayload();
 				
 				
 				// if dest mac address is of host
@@ -503,15 +540,12 @@ public class baadalHost {
 				logger.info("mactoport {}", macToPort.toString());
 				
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
-				{
-					
-					
+				{				
 					output_port = macToPort.get(eth.getDestinationMACAddress());
 					
 					if(output_port.getPortNumber() == _baadalUtils.TRUNK)
 					{
 						// get vlan tag
-						// outVlanTag = mac2Tag.get(eth.getSourceMACAddress());
 						// push vlan tag
 						actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
 						//actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag)); this line causes an error, don't uncomment!
@@ -530,27 +564,47 @@ public class baadalHost {
 					// output port is access port
 					else
 					{
-						if(ENABLE_INTER_VLAN_ROUTING)
-						{
+						
+						logger.info("decision here {}", _baadalUtils.getPolicy(interVmPolicy, ipv4.getSourceAddress(), ipv4.getDestinationAddress()));
+
+						switch(_baadalUtils.getPolicy(interVmPolicy, ipv4.getSourceAddress(), ipv4.getDestinationAddress())){
+						case ALLOW:
 							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 							ret = Command.STOP;
-						}
-						else
-						{
-							if(mac2Tag.get(eth.getSourceMACAddress()).equals(mac2Tag.get(eth.getDestinationMACAddress())))
+							break;
+						case DISALLOW:
+							_baadalUtils.doDropFlow(sw, msg, cntx, match);
+							ret = Command.STOP;
+							break;
+						case DEFAULT:
+							if(ENABLE_INTER_VLAN_ROUTING)
 							{
 								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
 								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
 								ret = Command.STOP;
 							}
-							else
+							else // inter-vlan routing is disabled
 							{
-								// logger.info("look at the changed match here -> {}", match);
-								_baadalUtils.doDropFlow(sw, msg, cntx, match);
-								ret = Command.STOP;
+								// if they are in same vlan the allow
+								if(ipToTag.get(ipv4.getSourceAddress()).equals(ipToTag.get(ipv4.getDestinationAddress())))
+								{
+									actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+									_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
+									ret = Command.STOP;
+								}
+								else // not in same vlan, so drop
+								{
+									// logger.info("look at the changed match here -> {}", match);
+									_baadalUtils.doDropFlow(sw, msg, cntx, match);
+									ret = Command.STOP;
+								}
 							}
-						}
+							break;
+						default:
+							logger.warn("Unexpected policy decision, dropping packet");
+							return Command.STOP;
+					  }
 					}
 				}
 				
