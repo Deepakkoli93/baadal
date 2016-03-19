@@ -12,10 +12,27 @@ public class baadalResource extends ServerResource{
 	 * Get basic info about the tool
 	 * @return
 	 */
+	
 	 @Get("json")
-	 public Object handleRequest() {		 
-		 return "{\"status\" : \"failure\", \"details\" : \"Invalid Operation\"}";
+	 public Object handleRequest() {		
+		 //return "{\"status\" : \"okay\", \"details\" : \"Invalid Operation\"}";
+		 IBaadalService b =
+	                (IBaadalService)getContext().getAttributes().
+	                    get(IBaadalService.class.getCanonicalName());
+	        
+	        return b.getInterVlanStatus();
 	 }
+//	 @Get("json")
+//	 public Object handleRequest2() {		
+//		 //return "{\"status\" : \"okay\", \"details\" : \"Invalid Operation\"}";
+//		 IBaadalService b =
+//	                (IBaadalService)getContext().getAttributes().
+//	                    get(IBaadalService.class.getCanonicalName());
+//	        
+//	        return b.getIpToTag();
+//	 }
+	 
+	
 	
 
 }

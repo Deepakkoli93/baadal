@@ -263,4 +263,14 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		// TODO Auto-generated method stub
 	}
 
+	@Override
+	public Map<IPv4Address, VlanVid> getIpToTag() {
+		// TODO Auto-generated method stub
+		return ipToTag;
+	}
+	
+	public boolean getInterVlanStatus(){
+		return true;
+	}
+
 }
