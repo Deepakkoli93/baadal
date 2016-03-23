@@ -134,7 +134,6 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule, IOF
 		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd(); // this will be a drop-flow; a flow that will not output to any ports
 		List<OFAction> actions = new ArrayList<OFAction>(); // set no action to drop
 		U64 cookie = AppCookie.makeCookie(FORWARDING_APP_ID, 0);
-		log.info("Droppingggg");
 		fmb.setCookie(cookie)
 		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)

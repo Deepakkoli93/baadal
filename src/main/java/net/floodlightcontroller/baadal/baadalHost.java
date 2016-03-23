@@ -23,6 +23,8 @@ import org.projectfloodlight.openflow.protocol.OFVersion;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.protocol.oxm.OFOxmEthDst;
+import org.projectfloodlight.openflow.protocol.oxm.OFOxmEthSrc;
 import org.projectfloodlight.openflow.protocol.oxm.OFOxmVlanVid;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
@@ -472,7 +474,7 @@ public class baadalHost {
 			{
 				
 				//IPv4 ipv4 = (IPv4) eth.getPayload();
-				
+				logger.info("mactoport {}", macToPort);
 				
 				// if dest mac address is of host
 				// and dest ip address if not of host then act as router and change destination mac addresses
@@ -488,13 +490,13 @@ public class baadalHost {
 								ipv4.getDestinationAddress());
 	
 						//sleep while wating for arp reply
-//						try {
-//						    //TimeUnit.NANOSECONDS.sleep(100);
-//						    //TimeUnit.MICROSECONDS.sleep(100);
-//						    TimeUnit.MILLISECONDS.sleep(100);
-//						   } catch (InterruptedException e) {
-//						    logger.info("Error in sleeping : "+e);
-//						   }
+						try {
+						    //TimeUnit.NANOSECONDS.sleep(100);
+						    //TimeUnit.MICROSECONDS.sleep(100);
+						    TimeUnit.MILLISECONDS.sleep(100);
+						   } catch (InterruptedException e) {
+						    logger.info("Error in sleeping : "+e);
+						   }
 					}
 					
 					if(ipToMac.get(ipv4.getDestinationAddress()) == null)
@@ -507,10 +509,23 @@ public class baadalHost {
 						// change the ethernet frame to reflect the next hop mac address 
 						eth.setDestinationMACAddress(ipToMac.get(ipv4.getDestinationAddress()));
 					    eth.setSourceMACAddress(hostMac);
+					    // actions.add(sw.getOFFactory().actions().setDlDst(ipToMac.get(ipv4.getDestinationAddress())));
+					    // actions.add(sw.getOFFactory().actions().setDlSrc(hostMac));
+					    
+					    
+					    
+					    OFOxmEthDst dstMac = sw.getOFFactory().oxms().ethDst(ipToMac.get(ipv4.getDestinationAddress()));
+					    actions.add(sw.getOFFactory().actions().setField(dstMac));
+					    
+					    OFOxmEthSrc srcMac = sw.getOFFactory().oxms().ethSrc(hostMac);
+					    actions.add(sw.getOFFactory().actions().setField(srcMac));
+					    
+					    
+					    
 					}
 					
 					// re create the match after packet has changed
-					match = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
+					// match = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
 					
 					// if output port is not known 
 					if(macToPort.get(eth.getDestinationMACAddress()) == null)

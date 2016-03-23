@@ -263,19 +263,20 @@ public class baadalUtils {
 
 		try {
 			if (logger.isTraceEnabled()) {
-				logger.trace("Writing installAndSendout PacketOut switch={} packet-in={} packet-out={}",
+				logger.info("Writing installAndSendout PacketOut switch={} packet-in={} packet-out={}",
 						new Object[] {sw, pi, pob.build()});
 			}
 			messageDamper.write(sw, pob.build());
 		} catch (IOException e) {
-			logger.error("Failure writing installAndSendout switch={} packet-in={} packet-out={}",
+			logger.info("Failure writing installAndSendout switch={} packet-in={} packet-out={}",
 					new Object[] {sw, pi, pob.build()}, e);
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
 		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
-		fmb.setCookie(cookie)
+		fmb 
+		.setPriority(FLOWMOD_DEFAULT_PRIORITY)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
 		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
 		.setBufferId(OFBufferId.NO_BUFFER)
@@ -283,7 +284,7 @@ public class baadalUtils {
 		.setActions(actions);
 
 		if (logger.isTraceEnabled()) {
-			logger.trace("write installAndSendout flow-mod srcSwitch={} match={} " +
+			logger.info("write installAndSendout flow-mod srcSwitch={} match={} " +
 					"pi={} flow-mod={}",
 					new Object[] {sw, match, pi, fmb.build()});
 		}
@@ -311,14 +312,15 @@ public class baadalUtils {
 			}
 			messageDamper.write(sw, pob.build());
 		} catch (IOException e) {
-			logger.error("Failure writing installAndSendout switch={} packet-in={} packet-out={}",
+			logger.info("Failure writing installAndSendout switch={} packet-in={} packet-out={}",
 					new Object[] {sw, pi, pob.build()}, e);
 		}
 		
 		// Create flow-mod based on packet-in and src-switch
 		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
-		fmb.setCookie(cookie)
+		fmb
+		.setPriority(FLOWMOD_DEFAULT_PRIORITY)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
 		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
 		.setBufferId(OFBufferId.NO_BUFFER)
@@ -326,7 +328,7 @@ public class baadalUtils {
 		.setActions(actions);
 
 		if (logger.isTraceEnabled()) {
-			logger.trace("write installAndSendout flow-mod srcSwitch={} match={} " +
+			logger.info("write installAndSendout flow-mod srcSwitch={} match={} " +
 					"pi={} flow-mod={}",
 					new Object[] {sw, match, pi, fmb.build()});
 		}
@@ -593,7 +595,7 @@ public class baadalUtils {
 		}
 		else if (interVmPolicy.get(dst) == null) // src is there as first
 		{
-			if(interVmPolicy.get(src) == null) //src is first but dst is not second
+			if(interVmPolicy.get(src).get(dst) == null) //src is first but dst is not second
 				ret = policyDecision.DEFAULT;
 			else //src is first and dst is second
 				ret = interVmPolicy.get(src).get(dst) == true? policyDecision.ALLOW : policyDecision.DISALLOW; 
