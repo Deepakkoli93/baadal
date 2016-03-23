@@ -241,11 +241,10 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		bh1 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.6"), ipToTag, interVmPolicy);
 		bh2 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.7"), ipToTag, interVmPolicy);
 		
-		//initialize centrsal bridge
+		//initialize central bridge
 		bg = new baadalGeneral(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.1"));
 		
-		
-		
+
 
 	}
 
@@ -265,7 +264,9 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 
 	@Override
 	public Map<IPv4Address, VlanVid> getIpToTag() {
-		// TODO Auto-generated method stub
+		//ipToTag.put(IPv4Address.of("99.99.99.99"), VlanVid.ofVlan(99));
+		//ipToTag.clear();
+
 		return ipToTag;
 	}
 	

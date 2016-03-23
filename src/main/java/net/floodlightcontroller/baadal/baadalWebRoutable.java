@@ -11,8 +11,8 @@ public class baadalWebRoutable implements RestletRoutable{
 	@Override
 	public Restlet getRestlet(Context context) {
         Router router = new Router(context);
-         router.attach("/ip2tag/json", baadalResource.class);
-         router.attach("/intervlanstatus/json", baadalResource.class);
+         router.attach("/list/json", baadalResource.class);
+         router.attach("/json", baadalResource.class);
         return router;
 	}
 
