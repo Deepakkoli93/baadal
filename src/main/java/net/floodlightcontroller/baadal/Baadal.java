@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -67,7 +69,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 	protected IFloodlightProviderService floodlightProvider;
 	private static final short APP_ID = 99;
 	protected static Logger logger;
-	
+	TimerTask task;
 	// taken from forwarding class
 	protected static ITopologyService topologyService; //to get a list of ports that can send broadcast packets
 	protected static OFMessageDamper messageDamper; // to write to switch
@@ -217,15 +219,15 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		
 		//initialize ipToTag
 		ipToTag = new ConcurrentHashMap<IPv4Address, VlanVid>();
-		ipToTag.put(IPv4Address.of("10.0.0.6"), VlanVid.ofVlan(0));
-		ipToTag.put(IPv4Address.of("10.0.0.7"), VlanVid.ofVlan(0));
-		ipToTag.put(IPv4Address.of("10.0.4.11"), VlanVid.ofVlan(4));
-		ipToTag.put(IPv4Address.of("10.0.2.25"), VlanVid.ofVlan(2));
-		ipToTag.put(IPv4Address.of("10.0.2.15"), VlanVid.ofVlan(2));
-		ipToTag.put(IPv4Address.of("10.0.2.28"), VlanVid.ofVlan(2));
-		ipToTag.put(IPv4Address.of("10.0.4.10"), VlanVid.ofVlan(4));
-		ipToTag.put(IPv4Address.of("10.0.4.25"), VlanVid.ofVlan(4));
-		ipToTag.put(IPv4Address.of("10.0.4.17"), VlanVid.ofVlan(4));
+//		ipToTag.put(IPv4Address.of("10.0.0.6"), VlanVid.ofVlan(0));
+//		ipToTag.put(IPv4Address.of("10.0.0.7"), VlanVid.ofVlan(0));
+//		ipToTag.put(IPv4Address.of("10.0.4.11"), VlanVid.ofVlan(4));
+//		ipToTag.put(IPv4Address.of("10.0.2.25"), VlanVid.ofVlan(2));
+//		ipToTag.put(IPv4Address.of("10.0.2.15"), VlanVid.ofVlan(2));
+//		ipToTag.put(IPv4Address.of("10.0.2.28"), VlanVid.ofVlan(2));
+//		ipToTag.put(IPv4Address.of("10.0.4.10"), VlanVid.ofVlan(4));
+//		ipToTag.put(IPv4Address.of("10.0.4.25"), VlanVid.ofVlan(4));
+//		ipToTag.put(IPv4Address.of("10.0.4.17"), VlanVid.ofVlan(4));
 		
 		//initialize inter vlan routing policy
 		ConcurrentHashMap<IPv4Address, Boolean> submap = new ConcurrentHashMap<IPv4Address,Boolean>();
@@ -233,7 +235,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		submap.put(IPv4Address.of("10.0.2.28"), true);
 		interVmPolicy.put(IPv4Address.of("10.0.4.17"), submap);
 
-		
+		ConcurrentHashMap<IPv4Address, ArrayList<IPv4Address>> x;
 		// initialize baadalUtils;
 		bu = new baadalUtils(topologyService, messageDamper, APP_ID, logger);
 		
@@ -244,7 +246,28 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		//initialize central bridge
 		bg = new baadalGeneral(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.1"));
 		
-
+		/*
+		 * Timer tasks for clearing data structures
+		 * like iptotag
+		 * */
+		task = new TimerTask(){
+			 @Override
+		      public void run() {
+		        // task to run goes here
+		        System.out.println("Hello !!!");
+		        ipToTag.clear();
+		        logger.info("iptotag {}", ipToTag);
+		      }
+		    };
+		Timer timer = new Timer();
+		long delay = 0;
+	    long intevalPeriod = 10 * 1000; 
+		    
+		    // schedules the task to be run in an interval 
+		timer.scheduleAtFixedRate(task, delay,
+		                                intevalPeriod);
+		
+		
 
 	}
 
@@ -258,20 +281,42 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 	}
 
 	@Override
-	public void addMacEntry(MacAddress mac, VlanVid vlanId) {
+	public void addIpToTag(ConcurrentHashMap<IPv4Address, VlanVid> _ipToTag) {
 		// TODO Auto-generated method stub
+		for(IPv4Address ipv4 : _ipToTag.keySet())
+		{
+			ipToTag.put(ipv4, _ipToTag.get(ipv4));
+		}
+		
+		bh1.setIPToTag(ipToTag);
+		bh1.setIPToTag(ipToTag);
 	}
 
 	@Override
 	public Map<IPv4Address, VlanVid> getIpToTag() {
 		//ipToTag.put(IPv4Address.of("99.99.99.99"), VlanVid.ofVlan(99));
 		//ipToTag.clear();
-
 		return ipToTag;
 	}
 	
 	public boolean getInterVlanStatus(){
 		return true;
+	}
+
+	@Override
+	public ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> getInterVmPolicy() {
+		// TODO Auto-generated method stub
+		return interVmPolicy;
+	}
+
+	@Override
+	public void addPolicy(
+			ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> _interVmPolicy) {
+		// TODO Auto-generated method stub
+		for(IPv4Address ip1 : _interVmPolicy.keySet())
+		{
+			interVmPolicy.put(ip1, _interVmPolicy.get(ip1));
+		}
 	}
 
 }

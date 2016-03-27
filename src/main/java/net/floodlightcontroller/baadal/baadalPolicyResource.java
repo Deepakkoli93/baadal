@@ -20,8 +20,8 @@ import com.fasterxml.jackson.databind.MappingJsonFactory;
 
 
 
-public class baadalResource extends ServerResource{
-	protected static Logger logger = LoggerFactory.getLogger(baadalResource.class);
+public class baadalPolicyResource extends ServerResource{
+	protected static Logger logger = LoggerFactory.getLogger(baadalPolicyResource.class);
 	
 	/**
 	 * Get basic info about the tool
@@ -35,7 +35,7 @@ public class baadalResource extends ServerResource{
 	                (IBaadalService)getContext().getAttributes().
 	                    get(IBaadalService.class.getCanonicalName());
 
-	        return b.getIpToTag();
+	        return b.getInterVmPolicy();
 	 }
 	 
 	 @Put

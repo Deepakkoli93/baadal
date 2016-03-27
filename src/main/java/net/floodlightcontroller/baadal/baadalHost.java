@@ -69,6 +69,12 @@ public class baadalHost {
 	{
 		ipToTag = _ipToTag;
 	}
+	
+	public void setInterVmPolicy(ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > _interVmPolicy)
+	{
+		interVmPolicy = _interVmPolicy;
+	}
+	
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		Ethernet eth = IFloodlightProviderService.bcStore.get(cntx,
 				IFloodlightProviderService.CONTEXT_PI_PAYLOAD);

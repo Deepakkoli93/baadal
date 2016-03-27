@@ -13,6 +13,7 @@ public class baadalWebRoutable implements RestletRoutable{
         Router router = new Router(context);
          router.attach("/list/json", baadalResource.class);
          router.attach("/json", baadalResource.class);
+         router.attach("/policy/json", baadalPolicyResource.class);
         return router;
 	}
 
