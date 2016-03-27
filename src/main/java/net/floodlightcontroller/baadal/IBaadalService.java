@@ -1,5 +1,6 @@
 package net.floodlightcontroller.baadal;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -21,5 +22,5 @@ public interface IBaadalService extends IFloodlightService{
 	public ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> getInterVmPolicy();
 	
 	// add a policy
-	public void addPolicy(ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> interVmPolicy);
+	public void addInterVmPolicy(List< List<Object> > policies);
 }

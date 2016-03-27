@@ -86,7 +86,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 	MacAddress dpid_nat_br = MacAddress.of("52:52:00:01:15:03");
 	MacAddress dpid_controller_br = MacAddress.of("52:52:00:01:15:02");
 	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();
-	Map<IPv4Address, MacAddress> ipToMac = new ConcurrentHashMap<IPv4Address, MacAddress> ();
+	//Map<IPv4Address, MacAddress> ipToMac = new ConcurrentHashMap<IPv4Address, MacAddress> ();
 	Map<IPv4Address, VlanVid> ipToTag;
 	ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > interVmPolicy;
 	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; // TODO: find sweet spot
@@ -267,8 +267,10 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		timer.scheduleAtFixedRate(task, delay,
 		                                intevalPeriod);
 		
-		
 
+
+
+		
 	}
 
 	@Override
@@ -280,7 +282,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 
 	}
 
-	@Override
+	@Override 
 	public void addIpToTag(ConcurrentHashMap<IPv4Address, VlanVid> _ipToTag) {
 		// TODO Auto-generated method stub
 		for(IPv4Address ipv4 : _ipToTag.keySet())
@@ -303,20 +305,55 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		return true;
 	}
 
-	@Override
+	@Override  
 	public ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> getInterVmPolicy() {
 		// TODO Auto-generated method stub
 		return interVmPolicy;
 	}
 
 	@Override
-	public void addPolicy(
-			ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>> _interVmPolicy) {
+	public void addInterVmPolicy(List< List<Object> > policies) {
 		// TODO Auto-generated method stub
-		for(IPv4Address ip1 : _interVmPolicy.keySet())
+		for(List<Object> policy : policies)
 		{
-			interVmPolicy.put(ip1, _interVmPolicy.get(ip1));
+			IPv4Address ip1 = (IPv4Address) policy.get(0);
+			IPv4Address ip2 = (IPv4Address) policy.get(1);
+			boolean decision = (boolean) policy.get(2);
+			
+			// add policy in intervmpolicy
+			
+			// if the entry does not exist, then create an  entry
+			if(interVmPolicy.get(ip1) == null && interVmPolicy.get(ip2) == null)
+			{
+				ConcurrentHashMap<IPv4Address, Boolean> submap = new ConcurrentHashMap<IPv4Address,Boolean>();
+				submap.put(ip2, decision);
+				interVmPolicy.put(ip1, submap);
+				continue;
+			}
+			else if (interVmPolicy.get(ip1) == null) // ip2 is there as first
+			{
+				 //ip2 is first but ip1 is not second				
+					interVmPolicy.get(ip2).put(ip1, decision);	
+					continue;
+			}
+			else if (interVmPolicy.get(ip2) == null) // ip1 is there as first
+			{
+				interVmPolicy.get(ip1).put(ip2, decision);
+				continue;
+			}
+			else //none of them is null
+			{
+				if(interVmPolicy.get(ip1).get(ip2) != null)
+					interVmPolicy.get(ip1).put(ip2, decision);
+				else if (interVmPolicy.get(ip2).get(ip1) != null)
+					interVmPolicy.get(ip2).put(ip1, decision);
+				else // both were present as first entry but still a pair couldn't be made
+					interVmPolicy.get(ip1).put(ip2,  decision);
+				
+				continue;
+			}
 		}
+		logger.info("interVmPolicy {}", interVmPolicy);
 	}
 
 }

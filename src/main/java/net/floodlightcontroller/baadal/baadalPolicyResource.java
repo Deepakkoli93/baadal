@@ -1,6 +1,8 @@
 package net.floodlightcontroller.baadal;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.projectfloodlight.openflow.types.IPv4Address;
@@ -41,8 +43,7 @@ public class baadalPolicyResource extends ServerResource{
 	 @Put
 	 @Post
 	 public Object addEntry(String json) throws IOException {		
-		 //return "{\"status\" : \"okay\", \"details\" : \"Invalid Operation\"}";
-		 ConcurrentHashMap<IPv4Address, VlanVid> ipToTag = new ConcurrentHashMap<IPv4Address, VlanVid>();
+		 List< List<Object> > policies = new ArrayList<List<Object>>();
 		 IBaadalService b =
 	                (IBaadalService)getContext().getAttributes().
 	                    get(IBaadalService.class.getCanonicalName());
@@ -65,9 +66,9 @@ public class baadalPolicyResource extends ServerResource{
 		        if (jp.getCurrentToken() != JsonToken.START_OBJECT) {
 		            throw new IOException("Expected START_OBJECT");
 		        }
-		        IPv4Address ip;
-		        VlanVid vlan;
-		        //while (jp.nextToken() != JsonToken.END_OBJECT) {
+		        IPv4Address ip1, ip2;
+		        boolean decision;
+		        // get the first ip address
 		            if (jp.nextToken() != JsonToken.FIELD_NAME) {
 		                throw new IOException("Expected FIELD_NAME");
 		            }
@@ -81,39 +82,62 @@ public class baadalPolicyResource extends ServerResource{
 		            	// attempt to create ip address
 		            	try{
 		            		//logger.info("look here{} and {}", jp.getCurrentName(), jp.getText());
-		            		ip = IPv4Address.of(jp.getText());
+		            		ip1 = IPv4Address.of(jp.getText());
 		            	}
 		            	catch(Exception e)
 		            	{
-		            		logger.error("IP address is not well formed " + e);
-		            		return "IP address is not well formed";
+		            		logger.error("IP address 1 is not well formed " + e);
+		            		return "IP address 1 is not well formed";
 		            	}
 		            }
 		            
-		            // get the vlan tag
+		           // get the second ip address
 		            if (jp.nextToken() != JsonToken.FIELD_NAME) {
 		                throw new IOException("Expected FIELD_NAME");
 		            }
-		            // check for name "vlan"
-		            if(!jp.getCurrentName().equals("vlan"))
-		            	throw new IOException("Expected vlan");
+		            // check for name "ip"
+		            if(!jp.getCurrentName().equals("ip"))
+		            	throw new IOException("Expected ip");
+		            else
+		            {
+		            	// get the value of ip
+		            	jp.nextToken();
+		            	// attempt to create ip address
+		            	try{
+		            		//logger.info("look here{} and {}", jp.getCurrentName(), jp.getText());
+		            		ip2 = IPv4Address.of(jp.getText());
+		            	}
+		            	catch(Exception e)
+		            	{
+		            		logger.error("IP address 2 is not well formed " + e);
+		            		return "IP address 2 is not well formed";
+		            	}
+		            }
+		            // get the decision
+		            if (jp.nextToken() != JsonToken.FIELD_NAME) {
+		                throw new IOException("Expected FIELD_NAME");
+		            }
+		            // check for name "decision"
+		            if(!jp.getCurrentName().equals("decision"))
+		            	throw new IOException("Expected decision");
 		            else
 		            {
 		            	// get the next token
 		            	jp.nextToken();
 		            	// attempt to create vlan tag
 		            	try{
-		            		int v = Integer.parseInt(jp.getText());
-		            		vlan = VlanVid.ofVlan(v);
+		            		decision = Boolean.valueOf(jp.getText());
 		            	}
 		            	catch(Exception e)
 		            	{
-		            		logger.error("VLan tag is not well formed" + e);
-		            		return "Vlan tag is not well formed";
+		            		logger.error("Decision is not well formed, should be true or false" + e);
+		            		return "Decision is not well formed, should be true or false";
 		            	}
 		            }
-		            ipToTag.put(ip, vlan);
-		            logger.info("iptotag {}",ipToTag.toString());
+		            List<Object> policy = new ArrayList<Object>();
+		            policy.add(ip1);policy.add(ip2);policy.add(decision);
+		            policies.add(policy);
+		            logger.info("policies {}",policies);
 		            //jp.nextToken();
 		            //logger.info("look here {} and {}", jp.getCurrentName(), jp.getText());
 		       // }
@@ -124,7 +148,7 @@ public class baadalPolicyResource extends ServerResource{
 			        }
 	        }
 	        jp.close();
-	        b.addIpToTag(ipToTag);
+	        b.addInterVmPolicy(policies);
 	        setStatus(Status.SUCCESS_OK);
 	        return "{\"status\":\"ok\"}";
 	 }
