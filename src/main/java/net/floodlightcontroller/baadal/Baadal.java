@@ -219,23 +219,19 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		
 		//initialize ipToTag
 		ipToTag = new ConcurrentHashMap<IPv4Address, VlanVid>();
-//		ipToTag.put(IPv4Address.of("10.0.0.6"), VlanVid.ofVlan(0));
-//		ipToTag.put(IPv4Address.of("10.0.0.7"), VlanVid.ofVlan(0));
-//		ipToTag.put(IPv4Address.of("10.0.4.11"), VlanVid.ofVlan(4));
-//		ipToTag.put(IPv4Address.of("10.0.2.25"), VlanVid.ofVlan(2));
-//		ipToTag.put(IPv4Address.of("10.0.2.15"), VlanVid.ofVlan(2));
-//		ipToTag.put(IPv4Address.of("10.0.2.28"), VlanVid.ofVlan(2));
-//		ipToTag.put(IPv4Address.of("10.0.4.10"), VlanVid.ofVlan(4));
-//		ipToTag.put(IPv4Address.of("10.0.4.25"), VlanVid.ofVlan(4));
-//		ipToTag.put(IPv4Address.of("10.0.4.17"), VlanVid.ofVlan(4));
+		ipToTag.put(IPv4Address.of("10.0.0.6"), VlanVid.ofVlan(0));
+		ipToTag.put(IPv4Address.of("10.0.0.7"), VlanVid.ofVlan(0));
+		ipToTag.put(IPv4Address.of("10.0.4.11"), VlanVid.ofVlan(4));
+		ipToTag.put(IPv4Address.of("10.0.2.25"), VlanVid.ofVlan(2));
+		ipToTag.put(IPv4Address.of("10.0.2.15"), VlanVid.ofVlan(2));
+		ipToTag.put(IPv4Address.of("10.0.2.28"), VlanVid.ofVlan(2));
+		ipToTag.put(IPv4Address.of("10.0.4.10"), VlanVid.ofVlan(4));
+		ipToTag.put(IPv4Address.of("10.0.4.25"), VlanVid.ofVlan(4));
+		ipToTag.put(IPv4Address.of("10.0.4.17"), VlanVid.ofVlan(4));
 		
 		//initialize inter vlan routing policy
-		ConcurrentHashMap<IPv4Address, Boolean> submap = new ConcurrentHashMap<IPv4Address,Boolean>();
 		interVmPolicy = new ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>>();
-		submap.put(IPv4Address.of("10.0.2.28"), true);
-		interVmPolicy.put(IPv4Address.of("10.0.4.17"), submap);
 
-		ConcurrentHashMap<IPv4Address, ArrayList<IPv4Address>> x;
 		// initialize baadalUtils;
 		bu = new baadalUtils(topologyService, messageDamper, APP_ID, logger);
 		
@@ -248,15 +244,15 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		
 		/*
 		 * Timer tasks for clearing data structures
-		 * like iptotag
+		 * like iptomac
 		 * */
 		task = new TimerTask(){
 			 @Override
 		      public void run() {
 		        // task to run goes here
 		        System.out.println("Hello !!!");
-		        ipToTag.clear();
-		        logger.info("iptotag {}", ipToTag);
+		        //ipToTag.clear();
+		        //logger.info("iptotag {}", ipToTag);
 		      }
 		    };
 		Timer timer = new Timer();
@@ -291,7 +287,7 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		}
 		
 		bh1.setIPToTag(ipToTag);
-		bh1.setIPToTag(ipToTag);
+		bh2.setIPToTag(ipToTag);
 	}
 
 	@Override
@@ -354,6 +350,9 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 			}
 		}
 		logger.info("interVmPolicy {}", interVmPolicy);
+		bh1.setInterVmPolicy(interVmPolicy);
+		bh2.setInterVmPolicy(interVmPolicy);
+		
 	}
 
 }
