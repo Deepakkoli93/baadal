@@ -363,54 +363,7 @@ public class baadalHost {
 						}
 					}
 				}
-//				if(macToPort.get(eth.getDestinationMACAddress()) != null)
-//				{	
-//					
-//					output_port = macToPort.get(eth.getDestinationMACAddress());
-//					if(vlanId.getVlan() == 0) // if untagged
-//					{
-//						//logger.info("At trunk port, packet is untagged {} outport is {}", eth, output_port);
-//						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-//						//logger.info("At trunk, Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
-//						ret = Command.STOP;
-//					}
-//					else // tagged
-//					{
-//						// strip the vlan tag
-//						actions.add(sw.getOFFactory().actions().popVlan());
-//						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-//						ret = Command.STOP;
-//					}
-//				
-//				}
-//				else //output port unknown
-//				{
-//					if(vlanId.getVlan() == 0) // if tagged
-//					{
-//						//flood and install flow
-//						_baadalUtils.doFlood(sw, msg, cntx, match, actions);
-//						ret = Command.STOP;
-//					}
-//					else // untagged
-//					{
-//						// find ports in vlan "out_vlan_tag"
-//						List<OFPort> ports = _baadalUtils.find_tagToPort(vlanId, host_index, portToTag);
-//						ports.remove(OFPort.of(_baadalUtils.TRUNK));
-//						
-//						// strip the vlan tag
-//						actions.add(sw.getOFFactory().actions().popVlan());
-//						
-//						// adding access ports in the vlan to out port list
-//						for(OFPort port : ports)
-//							actions.add(sw.getOFFactory().actions().output(port, Integer.MAX_VALUE));
-//						
-//						actions.add(sw.getOFFactory().actions().output(OFPort.of(_baadalUtils.LOCAL), Integer.MAX_VALUE));
-//						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-//						ret = Command.STOP;
-//					}
-//				}
+
 			}
 		}
 		else //inport is an access port
@@ -555,7 +508,7 @@ public class baadalHost {
 				}
 				
 
-				
+				// by now we should have the output port
 				logger.info("look here dest {}, src {}", ipv4.getDestinationAddress(), ipv4.getSourceAddress());
 				logger.info("look here whole packet eth {} and ipv4 {}", eth.toString(), ipv4.toString());
 				logger.info("mactoport {}", macToPort.toString());
@@ -629,6 +582,8 @@ public class baadalHost {
 					}
 				}
 				
+				// TODO: remove this else part because at this point the output port has been discovered, 
+				// if it is discoveraable, drop the packet in thie else
 				else //output port is unknown
 				{
 					logger.info("Packet coming from access port, outport is NOT known");
@@ -657,18 +612,11 @@ public class baadalHost {
 			}
 			
 		}
-//		
+		
 		if (logger.isTraceEnabled())
 			logger.trace("Results for flow between {} and {} is {}",
 					new Object[] {eth.getSourceMACAddress(), eth.getDestinationMACAddress(), ret});
-		/*
-		 * TODO - figure out how to still detect gateways while using
-		 * drop mods
-        if (ret == Command.STOP) {
-            if (!(eth.getPayload() instanceof ARP))
-                doDropFlow(sw, msg, cntx);
-        }
-		 */
+
 		return ret;
 	}
 }
