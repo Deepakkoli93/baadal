@@ -86,10 +86,10 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 	MacAddress dpid_nat_br = MacAddress.of("52:52:00:01:15:03");
 	MacAddress dpid_controller_br = MacAddress.of("52:52:00:01:15:02");
 	List<MacAddress> dpid_hosts = new ArrayList<MacAddress>();
-	//Map<IPv4Address, MacAddress> ipToMac = new ConcurrentHashMap<IPv4Address, MacAddress> ();
 	Map<IPv4Address, VlanVid> ipToTag;
 	ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > interVmPolicy;
-	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; // TODO: find sweet spot
+	List<IPv4Address> gateways;
+	protected static int OFMESSAGE_DAMPER_CAPACITY = 10000; 
 	protected static int OFMESSAGE_DAMPER_TIMEOUT = 250; // ms
 	
 	protected baadalUtils bu;
@@ -98,8 +98,6 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 	
 	protected IRestApiService restApi;
 
-	
-	
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		MacAddress switchMac = MacAddress.of(sw.getId());
 
@@ -229,6 +227,13 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		ipToTag.put(IPv4Address.of("10.0.4.25"), VlanVid.ofVlan(4));
 		ipToTag.put(IPv4Address.of("10.0.4.17"), VlanVid.ofVlan(4));
 		
+		//initialize gateways
+		 gateways = new ArrayList<IPv4Address>();
+		 gateways.add(IPv4Address.of("10.0.2.1"));
+		 gateways.add(IPv4Address.of("10.0.3.1"));
+		 gateways.add(IPv4Address.of("10.0.4.1"));
+		 gateways.add(IPv4Address.of("10.0.0.3"));
+		
 		//initialize inter vlan routing policy
 		interVmPolicy = new ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean>>();
 
@@ -236,8 +241,8 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 		bu = new baadalUtils(topologyService, messageDamper, APP_ID, logger);
 		
 		// initialize baadalHosts
-		bh1 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.6"), ipToTag, interVmPolicy);
-		bh2 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.7"), ipToTag, interVmPolicy);
+		bh1 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.6"), ipToTag, interVmPolicy, gateways);
+		bh2 = new baadalHost(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.7"), ipToTag, interVmPolicy, gateways);
 		
 		//initialize central bridge
 		bg = new baadalGeneral(logger, bu, dpid_hosts, macToTag, portToTag, IPv4Address.of("10.0.0.1"));
@@ -250,14 +255,16 @@ public class Baadal implements IFloodlightModule, IOFMessageListener, IBaadalSer
 			 @Override
 		      public void run() {
 		        // task to run goes here
-		        System.out.println("Hello !!!");
+		        System.out.println("Clearing cache");
 		        //ipToTag.clear();
 		        //logger.info("iptotag {}", ipToTag);
+		        bh1.clearCache();
+		        bh2.clearCache();
 		      }
 		    };
 		Timer timer = new Timer();
 		long delay = 0;
-	    long intevalPeriod = 10 * 1000; 
+	    long intevalPeriod = 10 * 10000; 
 		    
 		    // schedules the task to be run in an interval 
 		timer.scheduleAtFixedRate(task, delay,

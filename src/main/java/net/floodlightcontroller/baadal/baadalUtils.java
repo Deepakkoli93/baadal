@@ -169,6 +169,7 @@ public class baadalUtils {
 		OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
 		U64 cookie = AppCookie.makeCookie(APP_ID, 0);
 		fmb.setCookie(cookie)
+		.setPriority(FLOWMOD_DEFAULT_PRIORITY)
 		.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
 		.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
 		.setBufferId(OFBufferId.NO_BUFFER)
@@ -220,21 +221,22 @@ public class baadalUtils {
 			}
 			
 			// Create flow-mod based on packet-in and src-switch
-//			OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
-//			U64 cookie = AppCookie.makeCookie(APP_ID, 0);
-//			fmb.setCookie(cookie)
-//			.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
-//			.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
-//			.setBufferId(OFBufferId.NO_BUFFER)
-//			.setMatch(match)
-//			.setActions(actions);
-//
-//			if (logger.isTraceEnabled()) {
-//				logger.trace("write flood flow-mod srcSwitch={} match={} " +
-//						"pi={} flow-mod={}",
-//						new Object[] {sw, match, pi, fmb.build()});
-//			}
-//			sw.write(fmb.build());
+			OFFlowMod.Builder fmb = sw.getOFFactory().buildFlowAdd();
+			U64 cookie = AppCookie.makeCookie(APP_ID, 0);
+			fmb.setCookie(cookie)
+			.setPriority(FLOWMOD_DEFAULT_PRIORITY)
+			.setIdleTimeout(FLOWMOD_DEFAULT_IDLE_TIMEOUT)
+			.setHardTimeout(FLOWMOD_DEFAULT_HARD_TIMEOUT)
+			.setBufferId(OFBufferId.NO_BUFFER)
+			.setMatch(match)
+			.setActions(actions);
+
+			if (logger.isTraceEnabled()) {
+				logger.trace("write flood flow-mod srcSwitch={} match={} " +
+						"pi={} flow-mod={}",
+						new Object[] {sw, match, pi, fmb.build()});
+			}
+			sw.write(fmb.build());
 			return;		
 		}
 	
@@ -533,9 +535,9 @@ public class baadalUtils {
 				.setHardwareAddressLength((byte) 6)
 				.setProtocolAddressLength((byte) 4)
 				.setOpCode(ARP.OP_REQUEST)
-				.setSenderHardwareAddress(senderHardwareAddress)  // an unassigned mac id that it generates a PACKET_IN
+				.setSenderHardwareAddress(senderHardwareAddress)  // an unassigned mac id so that it generates a PACKET_IN
 				.setSenderProtocolAddress(senderProtocolAddress)
-				.setTargetHardwareAddress(MacAddress.of("00:00:00:00:00:00"))
+				.setTargetHardwareAddress(MacAddress.of("ff:ff:ff:ff:ff:ff"))
 				.setTargetProtocolAddress(targetProtocolAddress)
 				);
 		// Initialize a packet out
@@ -568,12 +570,12 @@ public class baadalUtils {
 		// Send packet
 		try {
 			//if (logger.isTraceEnabled()) {
-				logger.info("Writing ARP reply PacketOut switch={}  packet-out={}",
+				logger.info("Writing ARP request PacketOut switch={}  packet-out={}",
 						new Object[] {sw, pob.build()});
 			//}
 			messageDamper.write(sw, pob.build());
 		} catch (IOException e) {
-			logger.error("Failure writing installAndSendout switch={} packet-out={}",
+			logger.error("Failure writing arp request switch={} packet-out={}",
 					new Object[] {sw, pob.build()}, e);
 		}
 	}

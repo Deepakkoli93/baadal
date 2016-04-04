@@ -67,7 +67,8 @@ public class DefaultEntityClassifier implements
     protected static EnumSet<DeviceField> keyFields;
     static {
         //keyFields = EnumSet.of(DeviceField.MAC, DeviceField.VLAN);
-        keyFields = EnumSet.of(DeviceField.MAC);
+        keyFields = EnumSet.of(DeviceField.MAC); 
+    	 //keyFields = EnumSet.of(DeviceField.IPv4);
     }
     protected static DefaultEntityClass entityClass = new DefaultEntityClass("DefaultEntityClass");
 

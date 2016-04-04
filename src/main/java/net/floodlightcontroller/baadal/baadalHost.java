@@ -47,11 +47,12 @@ public class baadalHost {
 	Map<IPv4Address, VlanVid> ipToTag; 
 	boolean ENABLE_INTER_VLAN_ROUTING;
 	ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > interVmPolicy;
-	//public enum policyDecision{ ALLOW, DISALLOW, DEFAULT}
+	List<IPv4Address> gateways;
 	
 	public baadalHost(Logger _logger, baadalUtils bu, List<MacAddress> _dpid_hosts, Map<MacAddress, VlanVid> _macToTag, 
 			List<Map<OFPort, List<VlanVid> > > _portToTag, IPv4Address _hostip, Map<IPv4Address, VlanVid> _ipToTag,
-			ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > _interVmPolicy){
+			ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > _interVmPolicy,
+			List<IPv4Address> _gateways){
 		logger = _logger;
 		macToPort = new HashMap<MacAddress, OFPort>();
 		ipToMac = new HashMap<IPv4Address, MacAddress> ();
@@ -63,6 +64,7 @@ public class baadalHost {
 		ipToTag = _ipToTag;
 		ENABLE_INTER_VLAN_ROUTING = false;
 		interVmPolicy = _interVmPolicy;
+		gateways = _gateways;
 	}
 	
 	public void setIPToTag(Map<IPv4Address, VlanVid> _ipToTag)
@@ -73,6 +75,12 @@ public class baadalHost {
 	public void setInterVmPolicy(ConcurrentHashMap<IPv4Address, ConcurrentHashMap<IPv4Address, Boolean> > _interVmPolicy)
 	{
 		interVmPolicy = _interVmPolicy;
+	}
+	
+	public void clearCache()
+	{
+		ipToMac.clear();
+		macToPort.clear();
 	}
 	
 	protected Command processPacketIn(IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
@@ -109,23 +117,31 @@ public class baadalHost {
 			// generate ARP reply
 			if(arp.getOpCode().equals(ARP.OP_REQUEST))
 			{
-				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.1")))
+//				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.4.1")))
+//				{
+//
+//				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
+//						hostMac, gateway1, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
+//					return Command.STOP;
+//				};
+//				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.2.1")))
+//				{
+//
+//				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
+//						hostMac, gateway2, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
+//					return Command.STOP;
+//				};
+				int gatewayIndex = -1;
+				if((gatewayIndex=gateways.indexOf(arp.getTargetProtocolAddress())) != -1)
 				{
-
-				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
-						hostMac, gateway1, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
-					return Command.STOP;
-				};
-				if(arp.getTargetProtocolAddress().equals(IPv4Address.of("10.0.2.1")))
-				{
-
-				_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
-						hostMac, gateway2, arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
-					return Command.STOP;
-				};
+					logger.info("gateways index{}", gatewayIndex);
+					_baadalUtils.sendARPReply(sw, OFPort.ZERO, input_port, hostMac, eth.getSourceMACAddress(), eth.getPriorityCode(),
+							hostMac, gateways.get(gatewayIndex), arp.getSenderHardwareAddress(), arp.getSenderProtocolAddress());
+						return Command.STOP; 
+				}
 
 			}
-			// if it is a reply and target mac addr is that of host then save the port
+			
 			
 			else if (arp.getOpCode().equals(ARP.OP_REPLY))
 			{
@@ -156,7 +172,22 @@ public class baadalHost {
 			}
 			
 			else
-			{				
+			{	
+				// hack to change packet header for 99 mac address
+				IPv4 ipv4 = (IPv4)eth.getPayload();
+				if(eth.getDestinationMACAddress().equals(MacAddress.of("52:52:00:01:15:99")))
+				{
+					if(ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.0.6")))
+					{
+						OFOxmEthDst dstMac = sw.getOFFactory().oxms().ethDst(MacAddress.of("52:52:00:01:15:06"));
+						actions.add(sw.getOFFactory().actions().setField(dstMac));
+					}
+					else if(ipv4.getDestinationAddress().equals(IPv4Address.of("10.0.0.7")))
+					{
+						OFOxmEthDst dstMac = sw.getOFFactory().oxms().ethDst(MacAddress.of("52:52:00:01:15:07"));
+						actions.add(sw.getOFFactory().actions().setField(dstMac));
+					}
+				}
 				if(macToPort.get(eth.getDestinationMACAddress()) != null)
 				{
 					output_port = macToPort.get(eth.getDestinationMACAddress());
