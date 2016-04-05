@@ -108,8 +108,6 @@ public class baadalHost {
 
 			Command ret1 = Command.CONTINUE;
 			ARP arp = (ARP) eth.getPayload();
-			IPv4Address gateway1 = IPv4Address.of("10.0.4.1");
-			IPv4Address gateway2 = IPv4Address.of("10.0.2.1");
 			//logger.info("details->{} target address-> {}",arp.toString(), arp.getTargetProtocolAddress().toString());
 			//logger.info("ARP packet details -> {}",arp.toString());
 			//logger.info("generate reply");
@@ -188,69 +186,50 @@ public class baadalHost {
 						actions.add(sw.getOFFactory().actions().setField(dstMac));
 					}
 				}
-				if(macToPort.get(eth.getDestinationMACAddress()) != null)
+
+				// if packet comes from local port then always route using IP
+				if(ipToMac.get(ipv4.getDestinationAddress()) == null)
 				{
-					output_port = macToPort.get(eth.getDestinationMACAddress());
-					if(output_port == OFPort.of(_baadalUtils.TRUNK))
-					{
-						// if the tag is known
-						if(macToTag.get(eth.getDestinationMACAddress()) != null)
-						{
-							outVlanTag = macToTag.get(eth.getDestinationMACAddress());
-							
-							if(outVlanTag.getVlan() == 0)
-							{
-								// not sure why Integer.MAX_VALUE
-								
-								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-								// logger.info("Adding flow, packet is tagged with zero {} {}", match.toString(), actions.toString());
-								ret = Command.STOP;
-							}
-							
-							else
-							{
-								
-								actions.add(sw.getOFFactory().actions().pushVlan(EthType.VLAN_FRAME));
-								//actions.add(sw.getOFFactory().actions().setVlanVid(outVlanTag));
-								OFOxmVlanVid vlan = sw.getOFFactory().oxms().vlanVid(OFVlanVidMatch.ofVlanVid(outVlanTag));
-								actions.add(sw.getOFFactory().actions().setField(vlan));
-								actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-								_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-								ret = Command.STOP;
-							}
-						}
-						
-						// else if the tag is known
-						else
-						{
-							logger.info("The tag is NOT known");
-							actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-							_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-							ret = Command.STOP;
-						}
-					}
-					
-					// else if the port is LOCAL
-					else
-					{
-						actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-						_baadalUtils.installAndSendout(sw, msg, cntx, match, actions);
-						ret = Command.STOP;
-					}
+
+					_baadalUtils.sendARPRequest(sw, OFPort.ZERO, hostMac, MacAddress.of("52:52:00:01:15:99"), hostip,
+							ipv4.getDestinationAddress());
+					//sleep while wating for arp reply
+					try {
+					    //TimeUnit.NANOSECONDS.sleep(100);
+					    //TimeUnit.MICROSECONDS.sleep(100);
+					    TimeUnit.MILLISECONDS.sleep(100);
+					   } catch (InterruptedException e) {
+					    logger.info("Error in sleeping : "+e);
+					   }
 				}
 				
-				// else if the outport is not known
+				if(ipToMac.get(ipv4.getDestinationAddress()) == null)
+				{
+					// if still didn't resolve the mac address
+					return Command.STOP;
+				}
 				else
 				{
-					// output_port = OFPort.FLOOD;
-					// actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
-					// installAndSendout(sw, msg, cntx, match, actions);
-					logger.info("output port not known, flooding!");
-					_baadalUtils.doFlood(sw, msg, cntx, match, actions);
-					ret = Command.STOP;
+					// change the ethernet frame to reflect the next hop mac address 
+					eth.setDestinationMACAddress(ipToMac.get(ipv4.getDestinationAddress()));
+				    OFOxmEthDst dstMac = sw.getOFFactory().oxms().ethDst(ipToMac.get(ipv4.getDestinationAddress()));
+				    actions.add(sw.getOFFactory().actions().setField(dstMac));			
+				    
 				}
-					
+				
+				// by now we should have the output port
+				if(macToPort.get(eth.getDestinationMACAddress()) != null)
+				{				
+					output_port = macToPort.get(eth.getDestinationMACAddress());
+					actions.add(sw.getOFFactory().actions().output(output_port, Integer.MAX_VALUE));
+					_baadalUtils.installAndSendout(sw, msg, cntx, match, actions, eth);
+					ret = Command.STOP;					
+				}
+				// if still did not resolve then drop
+				else
+				{
+					return Command.STOP;
+				}
 			}
 		} 
 		
@@ -514,8 +493,6 @@ public class baadalHost {
 					    
 					}
 					
-					// re create the match after packet has changed
-					// match = _baadalUtils.createMatchFromPacket(sw, input_port, cntx);
 					
 					// if output port is not known 
 					if(macToPort.get(eth.getDestinationMACAddress()) == null)
